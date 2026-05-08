@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "StayMates"
+rootProject.name = "TrueBackup"
 include(":app")
