@@ -1,9 +1,9 @@
-<resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
-    <style name="Base.Theme.StayMates" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Customize your light theme here. -->
-        <!-- <item name="colorPrimary">@color/my_light_primary</item> -->
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Material3 base theme — actual styling done in Compose -->
+    <style name="Theme.TrueBackup" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/tb_bg</item>
+        <item name="android:statusBarColor">@color/tb_bg</item>
+        <item name="android:navigationBarColor">@color/tb_bg</item>
     </style>
-
-    <style name="Theme.StayMates" parent="Base.Theme.StayMates" />
 </resources>
