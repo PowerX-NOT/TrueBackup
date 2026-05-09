@@ -302,7 +302,7 @@ private fun InAppDashboardScreen(modifier: Modifier) {
                 scope.launch {
                     val result = withContext(Dispatchers.IO) {
                         runCatching {
-                            manager.prepareEmptyBackupSkeleton(
+                            manager.createBackupArchives(
                                 RootBackupRequest(
                                     packageName = packageName,
                                     basePath = backupBasePath
@@ -313,7 +313,10 @@ private fun InAppDashboardScreen(modifier: Modifier) {
                     isPreparing = false
                     resultText = result.fold(
                         onSuccess = {
-                            "Created: ${it.packageDir.absolutePath}\nConfig: ${it.configFile.absolutePath}"
+                            "Created: ${it.packageDir.absolutePath}\nConfig: ${it.configFile.absolutePath}\n" +
+                                "Parts: apk=${it.partFlags.apk}, user=${it.partFlags.userCe}, " +
+                                "user_de=${it.partFlags.userDe}, data=${it.partFlags.extData}, " +
+                                "obb=${it.partFlags.obb}, media=${it.partFlags.media}"
                         },
                         onFailure = {
                             "Failed to create backup skeleton: ${it.message}"
@@ -323,7 +326,7 @@ private fun InAppDashboardScreen(modifier: Modifier) {
             }
         ) {
             Text(
-                text = if (isPreparing) "Preparing..." else "Create backup skeleton"
+                text = if (isPreparing) "Preparing..." else "Create backup archives"
             )
         }
         if (!resultText.isNullOrBlank()) {
