@@ -21,6 +21,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
@@ -33,6 +34,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import dev.truebackup.app.backup.RootBackupInteropManager
+import dev.truebackup.app.backup.RootBackupRequest
 import dev.truebackup.app.root.RootPreflight
 import dev.truebackup.app.root.RootPreflightResult
 import kotlinx.coroutines.Dispatchers
@@ -250,6 +253,14 @@ private fun ReadyScreen(
 
 @Composable
 private fun InAppDashboardScreen(modifier: Modifier) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val manager = remember { RootBackupInteropManager(context) }
+    var packageName by remember { mutableStateOf("com.android.settings") }
+    var backupBasePath by remember { mutableStateOf("/sdcard") }
+    var isPreparing by remember { mutableStateOf(false) }
+    var resultText by remember { mutableStateOf<String?>(null) }
+
     Column(
         modifier = modifier.padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -264,6 +275,64 @@ private fun InAppDashboardScreen(modifier: Modifier) {
             text = "Permission and root checks completed.",
             style = MaterialTheme.typography.bodyMedium
         )
+        Spacer(modifier = Modifier.height(16.dp))
+        TextField(
+            value = packageName,
+            onValueChange = { packageName = it.trim() },
+            label = { Text("Package name") },
+            singleLine = true
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        TextField(
+            value = backupBasePath,
+            onValueChange = { backupBasePath = it.trim() },
+            label = { Text("Backup base path") },
+            singleLine = true
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Button(
+            onClick = {
+                if (isPreparing) return@Button
+                if (packageName.isBlank() || backupBasePath.isBlank()) {
+                    resultText = "Package name and backup base path are required."
+                    return@Button
+                }
+                isPreparing = true
+                resultText = null
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) {
+                        runCatching {
+                            manager.prepareEmptyBackupSkeleton(
+                                RootBackupRequest(
+                                    packageName = packageName,
+                                    basePath = backupBasePath
+                                )
+                            )
+                        }
+                    }
+                    isPreparing = false
+                    resultText = result.fold(
+                        onSuccess = {
+                            "Created: ${it.packageDir.absolutePath}\nConfig: ${it.configFile.absolutePath}"
+                        },
+                        onFailure = {
+                            "Failed to create backup skeleton: ${it.message}"
+                        }
+                    )
+                }
+            }
+        ) {
+            Text(
+                text = if (isPreparing) "Preparing..." else "Create backup skeleton"
+            )
+        }
+        if (!resultText.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = resultText ?: "",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
     }
 }
 
