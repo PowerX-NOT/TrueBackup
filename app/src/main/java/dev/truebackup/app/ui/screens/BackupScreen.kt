@@ -25,6 +25,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.foundation.Image
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,9 +34,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.graphics.drawable.toBitmap
 import dev.truebackup.app.backup.RootBackupInteropManager
 import dev.truebackup.app.backup.RootBackupRequest
 import kotlinx.coroutines.Dispatchers
@@ -84,101 +87,36 @@ fun BackupScreen() {
         Text("Back up apps", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(12.dp))
 
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                OutlinedTextField(
-                    modifier = Modifier.fillMaxWidth(),
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    label = { Text("Search apps") },
-                    placeholder = { Text("Search by app name or package") },
-                    singleLine = true
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Selected: ${selectedPackages.size}",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Button(
-                        onClick = {
-                            selectedPackages = if (filteredApps.isEmpty()) {
-                                emptySet()
-                            } else if (filteredApps.all { selectedPackages.contains(it.packageName) }) {
-                                selectedPackages - filteredApps.map { it.packageName }.toSet()
-                            } else {
-                                selectedPackages + filteredApps.map { it.packageName }.toSet()
-                            }
-                        }
-                    ) {
-                        Text("Toggle all visible")
+        OutlinedTextField(
+            modifier = Modifier.fillMaxWidth(),
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            label = { Text("Search apps") },
+            placeholder = { Text("Search by app name or package") },
+            singleLine = true
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Selected: ${selectedPackages.size}",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Button(
+                onClick = {
+                    selectedPackages = if (filteredApps.isEmpty()) {
+                        emptySet()
+                    } else if (filteredApps.all { selectedPackages.contains(it.packageName) }) {
+                        selectedPackages - filteredApps.map { it.packageName }.toSet()
+                    } else {
+                        selectedPackages + filteredApps.map { it.packageName }.toSet()
                     }
                 }
-                Spacer(modifier = Modifier.height(10.dp))
-                OutlinedTextField(
-                    modifier = Modifier.fillMaxWidth(),
-                    value = basePath ?: "No folder selected",
-                    onValueChange = {},
-                    label = { Text("Backup folder") },
-                    readOnly = true,
-                    singleLine = true
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                Button(modifier = Modifier.fillMaxWidth(), onClick = { folderPicker.launch(null) }) {
-                    Text("Choose backup folder")
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-                if (busy) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        val target = basePath
-                        if (busy) return@Button
-                        if (selectedPackages.isEmpty() || target.isNullOrBlank()) {
-                            output = "Select at least one app and choose backup folder."
-                            return@Button
-                        }
-                        busy = true
-                        output = null
-                        scope.launch {
-                            val result = withContext(Dispatchers.IO) {
-                                val success = mutableListOf<String>()
-                                val failed = mutableListOf<String>()
-                                selectedPackages.forEach { pkg ->
-                                    runCatching {
-                                        manager.createBackupArchives(
-                                            RootBackupRequest(packageName = pkg, basePath = target)
-                                        )
-                                    }.onSuccess {
-                                        success += pkg
-                                    }.onFailure {
-                                        failed += "$pkg (${it.message ?: "error"})"
-                                    }
-                                }
-                                success to failed
-                            }
-                            busy = false
-                            output = buildString {
-                                append("Backup complete.\n")
-                                append("Success: ${result.first.size}\n")
-                                append("Failed: ${result.second.size}")
-                                if (result.second.isNotEmpty()) {
-                                    append("\n")
-                                    append(result.second.joinToString(separator = "\n"))
-                                }
-                            }
-                        }
-                    }
-                ) {
-                    Text(if (busy) "Preparing..." else "Back up selected apps")
-                }
+            ) {
+                Text("Toggle visible")
             }
         }
 
@@ -194,6 +132,10 @@ fun BackupScreen() {
             ) {
                 items(filteredApps, key = { it.packageName }) { app ->
                     val checked = selectedPackages.contains(app.packageName)
+                    val appIcon = remember(app.packageName) {
+                        runCatching { context.packageManager.getApplicationIcon(app.packageName).toBitmap(96, 96) }
+                            .getOrNull()
+                    }
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Row(
                             modifier = Modifier
@@ -201,18 +143,28 @@ fun BackupScreen() {
                                 .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Card {
-                                Box(
+                            if (appIcon != null) {
+                                Image(
+                                    bitmap = appIcon.asImageBitmap(),
+                                    contentDescription = app.label,
                                     modifier = Modifier
                                         .width(36.dp)
-                                        .height(36.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = app.label.take(1).uppercase(),
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
+                                        .height(36.dp)
+                                )
+                            } else {
+                                Card {
+                                    Box(
+                                        modifier = Modifier
+                                            .width(36.dp)
+                                            .height(36.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = app.label.take(1).uppercase(),
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                 }
                             }
                             Spacer(modifier = Modifier.width(12.dp))
@@ -234,6 +186,67 @@ fun BackupScreen() {
                     }
                 }
             }
+        }
+        Spacer(modifier = Modifier.height(10.dp))
+        OutlinedTextField(
+            modifier = Modifier.fillMaxWidth(),
+            value = basePath ?: "No folder selected",
+            onValueChange = {},
+            label = { Text("Backup folder") },
+            readOnly = true,
+            singleLine = true
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Button(modifier = Modifier.fillMaxWidth(), onClick = { folderPicker.launch(null) }) {
+            Text("Choose backup folder")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        if (busy) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                val target = basePath
+                if (busy) return@Button
+                if (selectedPackages.isEmpty() || target.isNullOrBlank()) {
+                    output = "Select at least one app and choose backup folder."
+                    return@Button
+                }
+                busy = true
+                output = null
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) {
+                        val success = mutableListOf<String>()
+                        val failed = mutableListOf<String>()
+                        selectedPackages.forEach { pkg ->
+                            runCatching {
+                                manager.createBackupArchives(
+                                    RootBackupRequest(packageName = pkg, basePath = target)
+                                )
+                            }.onSuccess {
+                                success += pkg
+                            }.onFailure {
+                                failed += "$pkg (${it.message ?: "error"})"
+                            }
+                        }
+                        success to failed
+                    }
+                    busy = false
+                    output = buildString {
+                        append("Backup complete.\n")
+                        append("Success: ${result.first.size}\n")
+                        append("Failed: ${result.second.size}")
+                        if (result.second.isNotEmpty()) {
+                            append("\n")
+                            append(result.second.joinToString(separator = "\n"))
+                        }
+                    }
+                }
+            }
+        ) {
+            Text(if (busy) "Preparing..." else "Back up selected apps")
         }
 
         if (!output.isNullOrBlank()) {
