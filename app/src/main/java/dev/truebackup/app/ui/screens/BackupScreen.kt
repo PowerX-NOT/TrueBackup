@@ -19,11 +19,15 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.foundation.Image
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -85,8 +89,8 @@ fun BackupScreen() {
         ) {
             Text("Back up apps", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Box {
-                Button(onClick = { menuExpanded = true }) {
-                    Text("⋮")
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(imageVector = Icons.Filled.MoreVert, contentDescription = "Menu")
                 }
                 DropdownMenu(
                     expanded = menuExpanded,
@@ -261,24 +265,21 @@ private data class InstalledApp(
 
 private fun loadInstalledApps(context: android.content.Context): List<InstalledApp> {
     val pm = context.packageManager
-    return pm.getInstalledApplications(PackageManager.GET_META_DATA)
-        .filter { pm.getLaunchIntentForPackage(it.packageName) != null }
-        .map {
+    return pm.getInstalledPackages(0)
+        .asSequence()
+        .filter { it.packageName != context.packageName }
+        .mapNotNull { pkg ->
+            val ai = pkg.applicationInfo ?: return@mapNotNull null
             InstalledApp(
-                label = pm.getApplicationLabel(it).toString(),
-                packageName = it.packageName,
-                isSystem = it.isSystemLike()
+                label = pm.getApplicationLabel(ai).toString(),
+                packageName = pkg.packageName,
+                isSystem = (ai.flags and ApplicationInfo.FLAG_SYSTEM) != 0
             )
         }
+        .toList()
         .sortedWith(
             compareBy<InstalledApp> { it.label.lowercase() }.thenBy { it.packageName }
         )
-}
-
-private fun ApplicationInfo.isSystemLike(): Boolean {
-    val system = (flags and ApplicationInfo.FLAG_SYSTEM) != 0
-    val updatedSystem = (flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
-    return system || updatedSystem
 }
 
 // Backup folder selection lives in Settings.
