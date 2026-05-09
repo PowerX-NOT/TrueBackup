@@ -25,12 +25,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import dev.truebackup.app.root.RootPreflight
+import dev.truebackup.app.root.RootPreflightResult
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private data class PermissionStatus(
     val missingRuntimePermissions: List<String>,
@@ -140,6 +146,11 @@ private fun PermissionRequiredScreen(
 
 @Composable
 private fun ReadyScreen(modifier: Modifier) {
+    val rootPreflight = remember { RootPreflight() }
+    val scope = rememberCoroutineScope()
+    var isCheckingRoot by remember { mutableStateOf(false) }
+    var rootResult by remember { mutableStateOf<RootPreflightResult?>(null) }
+
     Column(
         modifier = modifier.padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -151,9 +162,44 @@ private fun ReadyScreen(modifier: Modifier) {
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "Root-mode dashboard implementation is next.",
+            text = "Run root preflight before entering backup dashboard.",
             style = MaterialTheme.typography.bodyMedium
         )
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(
+            onClick = {
+                if (isCheckingRoot) return@Button
+                isCheckingRoot = true
+                scope.launch {
+                    rootResult = withContext(Dispatchers.IO) {
+                        rootPreflight.verify()
+                    }
+                    isCheckingRoot = false
+                }
+            }
+        ) {
+            Text(
+                text = if (isCheckingRoot) {
+                    "Checking root..."
+                } else {
+                    "Run root preflight"
+                }
+            )
+        }
+        rootResult?.let { result ->
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = result.message,
+                style = MaterialTheme.typography.bodyMedium
+            )
+            if (result.output.isNotBlank()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Output: ${result.output}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
     }
 }
 
