@@ -10,6 +10,12 @@ import android.os.Environment
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -91,19 +97,34 @@ fun PermissionGateApp() {
     }
 
     Scaffold { innerPadding ->
-        if (status.allGranted) {
-            TrueBackupApp()
-        } else {
-            PermissionRequiredScreen(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(20.dp),
-                missingRuntimePermissions = status.missingRuntimePermissions,
-                needsAllFilesAccess = status.needsAllFilesAccess,
-                onRequest = ::requestMissingPermissions,
-                message = permissionMessage
-            )
+        AnimatedContent(
+            targetState = status.allGranted,
+            transitionSpec = {
+                // Entering the app: fade in + subtle scale up from 92%
+                (fadeIn(animationSpec = tween(400)) +
+                    scaleIn(
+                        animationSpec = tween(400),
+                        initialScale = 0.92f
+                    )) togetherWith
+                    // Permission screen fades out
+                    fadeOut(animationSpec = tween(200))
+            },
+            label = "PermissionToAppTransition"
+        ) { allGranted ->
+            if (allGranted) {
+                TrueBackupApp()
+            } else {
+                PermissionRequiredScreen(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                        .padding(20.dp),
+                    missingRuntimePermissions = status.missingRuntimePermissions,
+                    needsAllFilesAccess = status.needsAllFilesAccess,
+                    onRequest = ::requestMissingPermissions,
+                    message = permissionMessage
+                )
+            }
         }
     }
 }
