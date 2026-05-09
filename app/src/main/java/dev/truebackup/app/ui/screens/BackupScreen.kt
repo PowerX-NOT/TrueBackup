@@ -1,6 +1,7 @@
 package dev.truebackup.app.ui.screens
 
 import android.content.pm.PackageManager
+import android.content.pm.ApplicationInfo
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -53,14 +56,17 @@ fun BackupScreen() {
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedPackages by remember { mutableStateOf(setOf<String>()) }
+    var showSystemApps by remember { mutableStateOf(false) }
+    var menuExpanded by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var output by remember { mutableStateOf<String?>(null) }
-    val filteredApps = remember(installedApps, searchQuery) {
+    val filteredApps = remember(installedApps, searchQuery, showSystemApps) {
+        val baseList = if (showSystemApps) installedApps else installedApps.filter { !it.isSystem }
         if (searchQuery.isBlank()) {
-            installedApps
+            baseList
         } else {
             val query = searchQuery.trim().lowercase()
-            installedApps.filter {
+            baseList.filter {
                 it.label.lowercase().contains(query) || it.packageName.lowercase().contains(query)
             }
         }
@@ -72,7 +78,30 @@ fun BackupScreen() {
             .padding(16.dp),
         verticalArrangement = Arrangement.Top
     ) {
-        Text("Back up apps", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Back up apps", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Box {
+                Button(onClick = { menuExpanded = true }) {
+                    Text("⋮")
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(if (showSystemApps) "Hide system apps" else "Show system apps") },
+                        onClick = {
+                            showSystemApps = !showSystemApps
+                            menuExpanded = false
+                        }
+                    )
+                }
+            }
+        }
         Spacer(modifier = Modifier.height(12.dp))
 
         OutlinedTextField(
@@ -226,21 +255,30 @@ fun BackupScreen() {
 
 private data class InstalledApp(
     val label: String,
-    val packageName: String
+    val packageName: String,
+    val isSystem: Boolean
 )
 
 private fun loadInstalledApps(context: android.content.Context): List<InstalledApp> {
     val pm = context.packageManager
     return pm.getInstalledApplications(PackageManager.GET_META_DATA)
+        .filter { pm.getLaunchIntentForPackage(it.packageName) != null }
         .map {
             InstalledApp(
                 label = pm.getApplicationLabel(it).toString(),
-                packageName = it.packageName
+                packageName = it.packageName,
+                isSystem = it.isSystemLike()
             )
         }
         .sortedWith(
             compareBy<InstalledApp> { it.label.lowercase() }.thenBy { it.packageName }
         )
+}
+
+private fun ApplicationInfo.isSystemLike(): Boolean {
+    val system = (flags and ApplicationInfo.FLAG_SYSTEM) != 0
+    val updatedSystem = (flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+    return system || updatedSystem
 }
 
 // Backup folder selection lives in Settings.
