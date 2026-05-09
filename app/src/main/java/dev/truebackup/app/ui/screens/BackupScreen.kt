@@ -94,17 +94,47 @@ fun BackupScreen() {
                 style = MaterialTheme.typography.bodyMedium
             )
             Button(
+                enabled = !busy && selectedPackages.isNotEmpty() && !basePath.isNullOrBlank(),
                 onClick = {
-                    selectedPackages = if (filteredApps.isEmpty()) {
-                        emptySet()
-                    } else if (filteredApps.all { selectedPackages.contains(it.packageName) }) {
-                        selectedPackages - filteredApps.map { it.packageName }.toSet()
-                    } else {
-                        selectedPackages + filteredApps.map { it.packageName }.toSet()
+                    val target = basePath
+                    if (busy) return@Button
+                    if (selectedPackages.isEmpty() || target.isNullOrBlank()) {
+                        output = "Select at least one app and set backup folder in Settings."
+                        return@Button
+                    }
+                    busy = true
+                    output = null
+                    scope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            val success = mutableListOf<String>()
+                            val failed = mutableListOf<String>()
+                            selectedPackages.forEach { pkg ->
+                                runCatching {
+                                    manager.createBackupArchives(
+                                        RootBackupRequest(packageName = pkg, basePath = target)
+                                    )
+                                }.onSuccess {
+                                    success += pkg
+                                }.onFailure {
+                                    failed += "$pkg (${it.message ?: "error"})"
+                                }
+                            }
+                            success to failed
+                        }
+                        busy = false
+                        output = buildString {
+                            append("Backup complete.\n")
+                            append("Success: ${result.first.size}\n")
+                            append("Failed: ${result.second.size}")
+                            if (result.second.isNotEmpty()) {
+                                append("\n")
+                                append(result.second.joinToString(separator = "\n"))
+                            }
+                        }
                     }
                 }
             ) {
-                Text("Toggle visible")
+                Text(if (busy) "Backing up..." else "Back up")
             }
         }
 
@@ -176,61 +206,9 @@ fun BackupScreen() {
             }
         }
         Spacer(modifier = Modifier.height(10.dp))
-        OutlinedTextField(
-            modifier = Modifier.fillMaxWidth(),
-            value = basePath ?: "No folder selected (set this in Settings)",
-            onValueChange = {},
-            label = { Text("Backup folder") },
-            readOnly = true,
-            singleLine = true
-        )
-        Spacer(modifier = Modifier.height(8.dp))
         if (busy) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             Spacer(modifier = Modifier.height(8.dp))
-        }
-        Button(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = {
-                val target = basePath
-                if (busy) return@Button
-                if (selectedPackages.isEmpty() || target.isNullOrBlank()) {
-                    output = "Select at least one app and set backup folder in Settings."
-                    return@Button
-                }
-                busy = true
-                output = null
-                scope.launch {
-                    val result = withContext(Dispatchers.IO) {
-                        val success = mutableListOf<String>()
-                        val failed = mutableListOf<String>()
-                        selectedPackages.forEach { pkg ->
-                            runCatching {
-                                manager.createBackupArchives(
-                                    RootBackupRequest(packageName = pkg, basePath = target)
-                                )
-                            }.onSuccess {
-                                success += pkg
-                            }.onFailure {
-                                failed += "$pkg (${it.message ?: "error"})"
-                            }
-                        }
-                        success to failed
-                    }
-                    busy = false
-                    output = buildString {
-                        append("Backup complete.\n")
-                        append("Success: ${result.first.size}\n")
-                        append("Failed: ${result.second.size}")
-                        if (result.second.isNotEmpty()) {
-                            append("\n")
-                            append(result.second.joinToString(separator = "\n"))
-                        }
-                    }
-                }
-            }
-        ) {
-            Text(if (busy) "Preparing..." else "Back up selected apps")
         }
 
         if (!output.isNullOrBlank()) {
