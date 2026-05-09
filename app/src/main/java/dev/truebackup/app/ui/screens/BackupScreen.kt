@@ -1,6 +1,7 @@
 package dev.truebackup.app.ui.screens
 
 import android.net.Uri
+import android.content.pm.PackageManager
 import android.os.Environment
 import android.provider.DocumentsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -16,8 +17,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -36,13 +41,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BackupScreen() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val manager = remember { RootBackupInteropManager(context) }
+    val installedApps = remember(context) { loadInstalledApps(context) }
 
     var packageName by remember { mutableStateOf("") }
+    var selectedAppLabel by remember { mutableStateOf("") }
+    var appMenuExpanded by remember { mutableStateOf(false) }
     var basePath by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var output by remember { mutableStateOf<String?>(null) }
@@ -71,14 +80,44 @@ fun BackupScreen() {
 
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {
-                OutlinedTextField(
-                    modifier = Modifier.fillMaxWidth(),
-                    value = packageName,
-                    onValueChange = { packageName = it.trim() },
-                    label = { Text("Package name") },
-                    placeholder = { Text("e.g. com.android.settings") },
-                    singleLine = true
-                )
+                ExposedDropdownMenuBox(
+                    expanded = appMenuExpanded,
+                    onExpandedChange = { appMenuExpanded = !appMenuExpanded }
+                ) {
+                    OutlinedTextField(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(),
+                        value = selectedAppLabel,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Installed app") },
+                        placeholder = { Text("Select app for backup") },
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = appMenuExpanded)
+                        },
+                        singleLine = true
+                    )
+                    ExposedDropdownMenu(
+                        expanded = appMenuExpanded,
+                        onDismissRequest = { appMenuExpanded = false }
+                    ) {
+                        installedApps.forEach { app ->
+                            DropdownMenuItem(
+                                text = { Text("${app.label} (${app.packageName})") },
+                                onClick = {
+                                    selectedAppLabel = app.label
+                                    packageName = app.packageName
+                                    appMenuExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+                if (packageName.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text("Package: $packageName", style = MaterialTheme.typography.bodySmall)
+                }
                 Spacer(modifier = Modifier.height(10.dp))
                 OutlinedTextField(
                     modifier = Modifier.fillMaxWidth(),
@@ -145,6 +184,25 @@ fun BackupScreen() {
             }
         }
     }
+}
+
+private data class InstalledApp(
+    val label: String,
+    val packageName: String
+)
+
+private fun loadInstalledApps(context: android.content.Context): List<InstalledApp> {
+    val pm = context.packageManager
+    return pm.getInstalledApplications(PackageManager.GET_META_DATA)
+        .map {
+            InstalledApp(
+                label = pm.getApplicationLabel(it).toString(),
+                packageName = it.packageName
+            )
+        }
+        .sortedWith(
+            compareBy<InstalledApp> { it.label.lowercase() }.thenBy { it.packageName }
+        )
 }
 
 private fun resolveBackupPathFromTreeUri(uri: Uri): String? {
