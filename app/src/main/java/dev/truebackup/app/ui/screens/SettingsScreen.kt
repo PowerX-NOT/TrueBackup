@@ -12,6 +12,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -27,19 +28,26 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import dev.truebackup.app.root.RootPreflight
+import dev.truebackup.app.root.RootPreflightResult
 import dev.truebackup.app.settings.AppSettingsRepository
 import dev.truebackup.app.ui.util.resolvePrimaryStoragePathFromTreeUri
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun SettingsScreen() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val repo = remember(context) { AppSettingsRepository(context) }
+    val preflight = remember { RootPreflight() }
     val backupBasePath by repo.backupBasePath.collectAsState(initial = null)
 
     var verifyRootAtStartup by remember { mutableStateOf(true) }
     var enableEncryption by remember { mutableStateOf(false) }
+    var isCheckingRoot by remember { mutableStateOf(false) }
+    var rootResult by remember { mutableStateOf<RootPreflightResult?>(null) }
 
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -58,6 +66,38 @@ fun SettingsScreen() {
         Text("Settings", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(6.dp))
         Text("Runtime behavior and backup preferences.", style = MaterialTheme.typography.bodyMedium)
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Root status", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(8.dp))
+                if (isCheckingRoot) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        if (isCheckingRoot) return@Button
+                        isCheckingRoot = true
+                        scope.launch {
+                            rootResult = withContext(Dispatchers.IO) { preflight.verify() }
+                            isCheckingRoot = false
+                        }
+                    }
+                ) {
+                    Text(if (isCheckingRoot) "Checking..." else "Run root preflight")
+                }
+                rootResult?.let {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(it.message, style = MaterialTheme.typography.bodyMedium)
+                    if (it.output.isNotBlank()) {
+                        Text("Output: ${it.output}", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
         Spacer(modifier = Modifier.height(16.dp))
 
         Card(modifier = Modifier.fillMaxWidth()) {

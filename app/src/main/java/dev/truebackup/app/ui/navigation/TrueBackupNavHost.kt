@@ -6,7 +6,6 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import dev.truebackup.app.ui.screens.BackupScreen
-import dev.truebackup.app.ui.screens.HomeScreen
 import dev.truebackup.app.ui.screens.RestoreScreen
 import dev.truebackup.app.ui.screens.SettingsScreen
 
@@ -17,12 +16,9 @@ fun TrueBackupNavHost(
 ) {
     NavHost(
         navController = navController,
-        startDestination = AppDestination.Home.route,
+        startDestination = AppDestination.Backup.route,
         modifier = modifier
     ) {
-        composable(AppDestination.Home.route) {
-            HomeScreen()
-        }
         composable(AppDestination.Backup.route) {
             BackupScreen()
         }
