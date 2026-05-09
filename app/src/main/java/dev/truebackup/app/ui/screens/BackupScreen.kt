@@ -1,11 +1,6 @@
 package dev.truebackup.app.ui.screens
 
 import android.content.pm.PackageManager
-import android.net.Uri
-import android.os.Environment
-import android.provider.DocumentsContract
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +22,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.foundation.Image
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,6 +37,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.graphics.drawable.toBitmap
 import dev.truebackup.app.backup.RootBackupInteropManager
 import dev.truebackup.app.backup.RootBackupRequest
+import dev.truebackup.app.settings.AppSettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -51,10 +48,11 @@ fun BackupScreen() {
     val scope = rememberCoroutineScope()
     val manager = remember { RootBackupInteropManager(context) }
     val installedApps = remember(context) { loadInstalledApps(context) }
+    val repo = remember(context) { AppSettingsRepository(context) }
+    val basePath by repo.backupBasePath.collectAsState(initial = null)
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedPackages by remember { mutableStateOf(setOf<String>()) }
-    var basePath by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var output by remember { mutableStateOf<String?>(null) }
     val filteredApps = remember(installedApps, searchQuery) {
@@ -65,16 +63,6 @@ fun BackupScreen() {
             installedApps.filter {
                 it.label.lowercase().contains(query) || it.packageName.lowercase().contains(query)
             }
-        }
-    }
-
-    val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        val selected = uri?.let(::resolveBackupPathFromTreeUri)
-        if (selected != null) {
-            basePath = selected
-            output = "Selected folder: $selected"
-        } else if (uri != null) {
-            output = "Pick a folder from internal shared storage."
         }
     }
 
@@ -190,16 +178,12 @@ fun BackupScreen() {
         Spacer(modifier = Modifier.height(10.dp))
         OutlinedTextField(
             modifier = Modifier.fillMaxWidth(),
-            value = basePath ?: "No folder selected",
+            value = basePath ?: "No folder selected (set this in Settings)",
             onValueChange = {},
             label = { Text("Backup folder") },
             readOnly = true,
             singleLine = true
         )
-        Spacer(modifier = Modifier.height(8.dp))
-        Button(modifier = Modifier.fillMaxWidth(), onClick = { folderPicker.launch(null) }) {
-            Text("Choose backup folder")
-        }
         Spacer(modifier = Modifier.height(8.dp))
         if (busy) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -211,7 +195,7 @@ fun BackupScreen() {
                 val target = basePath
                 if (busy) return@Button
                 if (selectedPackages.isEmpty() || target.isNullOrBlank()) {
-                    output = "Select at least one app and choose backup folder."
+                    output = "Select at least one app and set backup folder in Settings."
                     return@Button
                 }
                 busy = true
@@ -281,12 +265,4 @@ private fun loadInstalledApps(context: android.content.Context): List<InstalledA
         )
 }
 
-private fun resolveBackupPathFromTreeUri(uri: Uri): String? {
-    val id = runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull() ?: return null
-    val split = id.split(':', limit = 2)
-    val volume = split.firstOrNull() ?: return null
-    val relative = if (split.size > 1) split[1] else ""
-    if (!volume.equals("primary", ignoreCase = true)) return null
-    val base = Environment.getExternalStorageDirectory().absolutePath
-    return if (relative.isBlank()) base else "$base/$relative"
-}
+// Backup folder selection lives in Settings.
