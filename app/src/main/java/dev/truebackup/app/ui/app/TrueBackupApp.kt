@@ -1,6 +1,7 @@
 package dev.truebackup.app.ui.app
 
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -35,7 +36,13 @@ fun TrueBackupApp() {
                                 }
                             }
                         },
-                        icon = { Text(destination.label.take(1)) },
+                        icon = {
+                            val isSelected = currentRoute == destination.route
+                            Icon(
+                                imageVector = if (isSelected) destination.selectedIcon else destination.unselectedIcon,
+                                contentDescription = destination.label
+                            )
+                        },
                         label = { Text(destination.label) }
                     )
                 }
