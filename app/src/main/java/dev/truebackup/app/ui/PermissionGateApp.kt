@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
+import android.provider.DocumentsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -313,10 +314,22 @@ private fun InAppDashboardScreen(modifier: Modifier) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val manager = remember { RootBackupInteropManager(context) }
-    var packageName by remember { mutableStateOf("com.android.settings") }
-    var backupBasePath by remember { mutableStateOf("/sdcard") }
+    var packageName by remember { mutableStateOf("") }
+    var backupBasePath by remember { mutableStateOf<String?>(null) }
     var isPreparing by remember { mutableStateOf(false) }
     var resultText by remember { mutableStateOf<String?>(null) }
+    val folderPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val resolvedPath = resolveBackupPathFromTreeUri(uri)
+        if (resolvedPath != null) {
+            backupBasePath = resolvedPath
+            resultText = "Selected backup folder: $resolvedPath"
+        } else {
+            resultText = "Selected folder is not a primary shared storage path. Choose a folder under Internal Storage."
+        }
+    }
 
     Column(
         modifier = modifier
@@ -343,16 +356,25 @@ private fun InAppDashboardScreen(modifier: Modifier) {
                     value = packageName,
                     onValueChange = { packageName = it.trim() },
                     label = { Text("Package name") },
+                    placeholder = { Text("e.g. com.android.settings") },
                     singleLine = true
                 )
                 Spacer(modifier = Modifier.height(10.dp))
                 OutlinedTextField(
                     modifier = Modifier.fillMaxWidth(),
-                    value = backupBasePath,
-                    onValueChange = { backupBasePath = it.trim() },
+                    value = backupBasePath ?: "No folder selected",
+                    onValueChange = {},
                     label = { Text("Backup base path") },
+                    readOnly = true,
                     singleLine = true
                 )
+                Spacer(modifier = Modifier.height(10.dp))
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { folderPicker.launch(null) }
+                ) {
+                    Text("Choose backup folder")
+                }
                 Spacer(modifier = Modifier.height(14.dp))
                 if (isPreparing) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -362,8 +384,9 @@ private fun InAppDashboardScreen(modifier: Modifier) {
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
                         if (isPreparing) return@Button
-                        if (packageName.isBlank() || backupBasePath.isBlank()) {
-                            resultText = "Package name and backup base path are required."
+                        val targetPath = backupBasePath
+                        if (packageName.isBlank() || targetPath.isNullOrBlank()) {
+                            resultText = "Package name and backup folder are required."
                             return@Button
                         }
                         isPreparing = true
@@ -374,7 +397,7 @@ private fun InAppDashboardScreen(modifier: Modifier) {
                                     manager.createBackupArchives(
                                         RootBackupRequest(
                                             packageName = packageName,
-                                            basePath = backupBasePath
+                                            basePath = targetPath
                                         )
                                     )
                                 }
@@ -416,6 +439,17 @@ private fun InAppDashboardScreen(modifier: Modifier) {
             }
         }
     }
+}
+
+private fun resolveBackupPathFromTreeUri(uri: Uri): String? {
+    val treeDocId = runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull() ?: return null
+    val split = treeDocId.split(':', limit = 2)
+    if (split.isEmpty()) return null
+    val volume = split[0]
+    val relative = if (split.size > 1) split[1] else ""
+    if (!volume.equals("primary", ignoreCase = true)) return null
+    val base = Environment.getExternalStorageDirectory().absolutePath
+    return if (relative.isBlank()) base else "$base/$relative"
 }
 
 @Composable
