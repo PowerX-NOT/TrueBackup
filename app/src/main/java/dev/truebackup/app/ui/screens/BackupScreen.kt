@@ -265,7 +265,7 @@ private data class InstalledApp(
 
 private fun loadInstalledApps(context: android.content.Context): List<InstalledApp> {
     val pm = context.packageManager
-    return pm.getInstalledPackages(0)
+    return pm.getInstalledPackages(PackageManager.GET_META_DATA)
         .asSequence()
         .filter { it.packageName != context.packageName }
         .mapNotNull { pkg ->
