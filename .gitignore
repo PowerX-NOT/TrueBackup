@@ -20,3 +20,6 @@ captures/
 
 # Kotlin
 /.kotlin/
+
+# git
+.githooks/
