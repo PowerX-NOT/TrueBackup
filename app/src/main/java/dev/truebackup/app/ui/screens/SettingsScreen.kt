@@ -1,6 +1,12 @@
 package dev.truebackup.app.ui.screens
 
 import android.net.Uri
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -72,15 +78,25 @@ fun SettingsScreen() {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Root status", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.height(8.dp))
-                if (isCheckingRoot) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    Spacer(modifier = Modifier.height(8.dp))
+
+                // Smooth expand/collapse instead of a hard layout jump
+                AnimatedVisibility(
+                    visible = isCheckingRoot,
+                    enter = expandVertically(tween(250)) + fadeIn(tween(250)),
+                    exit = shrinkVertically(tween(200)) + fadeOut(tween(150))
+                ) {
+                    Column {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
                 }
+
                 Button(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
                         if (isCheckingRoot) return@Button
                         isCheckingRoot = true
+                        rootResult = null          // clear stale result while re-checking
                         scope.launch {
                             rootResult = withContext(Dispatchers.IO) { preflight.verify() }
                             isCheckingRoot = false
@@ -89,11 +105,22 @@ fun SettingsScreen() {
                 ) {
                     Text(if (isCheckingRoot) "Checking..." else "Run root preflight")
                 }
-                rootResult?.let {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(it.message, style = MaterialTheme.typography.bodyMedium)
-                    if (it.output.isNotBlank()) {
-                        Text("Output: ${it.output}", style = MaterialTheme.typography.bodySmall)
+
+                // Result fades in smoothly once available
+                AnimatedVisibility(
+                    visible = rootResult != null,
+                    enter = expandVertically(tween(300)) + fadeIn(tween(300)),
+                    exit = shrinkVertically(tween(200)) + fadeOut(tween(150))
+                ) {
+                    rootResult?.let { result ->
+                        Column {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(result.message, style = MaterialTheme.typography.bodyMedium)
+                            if (result.output.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Output: ${result.output}", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
                     }
                 }
             }
