@@ -52,6 +52,7 @@ fun PermissionGateApp() {
     val context = LocalContext.current
     var status by remember { mutableStateOf(currentPermissionStatus(context)) }
     var permissionMessage by remember { mutableStateOf<String?>(null) }
+    var hasRootAccess by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         status = currentPermissionStatus(context)
@@ -98,11 +99,18 @@ fun PermissionGateApp() {
     }
 
     Scaffold { paddingValues ->
-        if (status.allGranted) {
-            ReadyScreen(
+        if (status.allGranted && hasRootAccess) {
+            InAppDashboardScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
+            )
+        } else if (status.allGranted) {
+            ReadyScreen(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+                onRootVerified = { hasRootAccess = true }
             )
         } else {
             PermissionRequiredScreen(
@@ -176,7 +184,10 @@ private fun PermissionRequiredScreen(
 }
 
 @Composable
-private fun ReadyScreen(modifier: Modifier) {
+private fun ReadyScreen(
+    modifier: Modifier,
+    onRootVerified: () -> Unit
+) {
     val rootPreflight = remember { RootPreflight() }
     val scope = rememberCoroutineScope()
     var isCheckingRoot by remember { mutableStateOf(false) }
@@ -205,6 +216,9 @@ private fun ReadyScreen(modifier: Modifier) {
                     rootResult = withContext(Dispatchers.IO) {
                         rootPreflight.verify()
                     }
+                    if (rootResult?.isRootAvailable == true) {
+                        onRootVerified()
+                    }
                     isCheckingRoot = false
                 }
             }
@@ -231,6 +245,25 @@ private fun ReadyScreen(modifier: Modifier) {
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun InAppDashboardScreen(modifier: Modifier) {
+    Column(
+        modifier = modifier.padding(20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            text = "TrueBackup Dashboard",
+            style = MaterialTheme.typography.headlineSmall
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Permission and root checks completed.",
+            style = MaterialTheme.typography.bodyMedium
+        )
     }
 }
 
