@@ -7,20 +7,28 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.FolderOff
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,9 +38,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.truebackup.app.root.RootPreflight
 import dev.truebackup.app.root.RootPreflightResult
@@ -74,12 +85,12 @@ fun SettingsScreen() {
         Text("Runtime behavior and backup preferences.", style = MaterialTheme.typography.bodyMedium)
         Spacer(modifier = Modifier.height(16.dp))
 
+        // ── Root status card ─────────────────────────────────────────────────
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Root status", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Smooth expand/collapse instead of a hard layout jump
                 AnimatedVisibility(
                     visible = isCheckingRoot,
                     enter = expandVertically(tween(250)) + fadeIn(tween(250)),
@@ -96,7 +107,7 @@ fun SettingsScreen() {
                     onClick = {
                         if (isCheckingRoot) return@Button
                         isCheckingRoot = true
-                        rootResult = null          // clear stale result while re-checking
+                        rootResult = null
                         scope.launch {
                             rootResult = withContext(Dispatchers.IO) { preflight.verify() }
                             isCheckingRoot = false
@@ -106,7 +117,6 @@ fun SettingsScreen() {
                     Text(if (isCheckingRoot) "Checking..." else "Run root preflight")
                 }
 
-                // Result fades in smoothly once available
                 AnimatedVisibility(
                     visible = rootResult != null,
                     enter = expandVertically(tween(300)) + fadeIn(tween(300)),
@@ -127,24 +137,24 @@ fun SettingsScreen() {
         }
         Spacer(modifier = Modifier.height(16.dp))
 
+        // ── Backup destination card ───────────────────────────────────────────
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text("Backup destination", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Spacer(modifier = Modifier.height(10.dp))
-                OutlinedTextField(
-                    modifier = Modifier.fillMaxWidth(),
-                    value = backupBasePath ?: "No folder selected",
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Backup folder") },
-                    singleLine = true
+                Text(
+                    "Backup destination",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
                 )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                FolderPathDisplay(path = backupBasePath)
+
                 Spacer(modifier = Modifier.height(10.dp))
                 Button(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = { folderPicker.launch(null) }
                 ) {
-                    Text("Choose backup folder")
+                    Text(if (backupBasePath.isNullOrBlank()) "Choose backup folder" else "Change folder")
                 }
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -164,13 +174,69 @@ fun SettingsScreen() {
     }
 }
 
+/**
+ * Styled read-only path display with a folder icon.
+ * Shows the last path segment in bold and the parent path muted above it.
+ */
+@Composable
+private fun FolderPathDisplay(path: String?) {
+    val scheme = MaterialTheme.colorScheme
+    val hasPath = !path.isNullOrBlank()
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(scheme.surfaceContainerHigh)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = if (hasPath) Icons.Outlined.Folder else Icons.Outlined.FolderOff,
+            contentDescription = null,
+            tint = if (hasPath) scheme.primary else scheme.onSurfaceVariant,
+            modifier = Modifier.size(28.dp)
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        if (hasPath && path != null) {
+            val segments = path.trimEnd('/').split('/')
+            val folderName = segments.last()
+            val parentPath = segments.dropLast(1).joinToString("/").ifBlank { "/" }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = folderName,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = scheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = parentPath,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        } else {
+            Text(
+                text = "No folder selected",
+                style = MaterialTheme.typography.bodyMedium,
+                color = scheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
 @Composable
 private fun SettingRow(
     title: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
-    androidx.compose.foundation.layout.Row(
+    Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
