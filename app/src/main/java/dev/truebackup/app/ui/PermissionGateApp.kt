@@ -11,17 +11,25 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
@@ -30,8 +38,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import dev.truebackup.app.backup.RootBackupInteropManager
@@ -102,29 +112,31 @@ fun PermissionGateApp() {
     }
 
     Scaffold { paddingValues ->
-        if (status.allGranted && hasRootAccess) {
-            InAppDashboardScreen(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-            )
-        } else if (status.allGranted) {
-            ReadyScreen(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                onRootVerified = { hasRootAccess = true }
-            )
-        } else {
-            PermissionRequiredScreen(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                missingRuntimePermissions = status.missingRuntimePermissions,
-                needsAllFilesAccess = status.needsAllFilesAccess,
-                onRequest = ::requestMissingPermissions,
-                message = permissionMessage
-            )
+        GradientBackground(modifier = Modifier.fillMaxSize()) {
+            if (status.allGranted && hasRootAccess) {
+                InAppDashboardScreen(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                )
+            } else if (status.allGranted) {
+                ReadyScreen(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
+                    onRootVerified = { hasRootAccess = true }
+                )
+            } else {
+                PermissionRequiredScreen(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
+                    missingRuntimePermissions = status.missingRuntimePermissions,
+                    needsAllFilesAccess = status.needsAllFilesAccess,
+                    onRequest = ::requestMissingPermissions,
+                    message = permissionMessage
+                )
+            }
         }
     }
 }
@@ -138,15 +150,23 @@ private fun PermissionRequiredScreen(
     message: String?
 ) {
     Column(
-        modifier = modifier.padding(20.dp),
+        modifier = modifier
+            .padding(20.dp)
+            .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Card(modifier = Modifier.padding(4.dp)) {
-            Column(modifier = Modifier.padding(16.dp)) {
+        HeroTitle(
+            title = "Welcome to TrueBackup",
+            subtitle = "Complete permission setup before entering root-mode dashboard."
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        GlassCard {
+            Column(modifier = Modifier.padding(18.dp)) {
                 Text(
                     text = "Permission setup required",
-                    style = MaterialTheme.typography.headlineSmall
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
@@ -157,10 +177,10 @@ private fun PermissionRequiredScreen(
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = "Missing runtime permissions:",
-                        style = MaterialTheme.typography.titleSmall
+                        style = MaterialTheme.typography.titleMedium
                     )
                     missingRuntimePermissions.forEach { permission ->
-                        Text(text = "- $permission", style = MaterialTheme.typography.bodySmall)
+                        Text(text = "• $permission", style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 if (needsAllFilesAccess) {
@@ -180,7 +200,10 @@ private fun PermissionRequiredScreen(
             }
         }
         Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = onRequest) {
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onRequest
+        ) {
             Text(text = "Grant required permissions")
         }
     }
@@ -197,21 +220,38 @@ private fun ReadyScreen(
     var rootResult by remember { mutableStateOf<RootPreflightResult?>(null) }
 
     Column(
-        modifier = modifier.padding(20.dp),
+        modifier = modifier
+            .padding(20.dp)
+            .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text(
-            text = "Permissions granted",
-            style = MaterialTheme.typography.headlineSmall
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "Run root preflight before entering backup dashboard.",
-            style = MaterialTheme.typography.bodyMedium
+        HeroTitle(
+            title = "Security preflight",
+            subtitle = "Permissions are ready. Validate root execution before entering dashboard."
         )
         Spacer(modifier = Modifier.height(16.dp))
+        GlassCard {
+            Column(modifier = Modifier.padding(18.dp)) {
+                if (isCheckingRoot) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+                Text(
+                    text = "Root preflight",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Runs `su -c id -u` and confirms uid is 0.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(14.dp))
         Button(
+            modifier = Modifier.fillMaxWidth(),
             onClick = {
                 if (isCheckingRoot) return@Button
                 isCheckingRoot = true
@@ -236,14 +276,31 @@ private fun ReadyScreen(
         }
         rootResult?.let { result ->
             Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = result.message,
-                style = MaterialTheme.typography.bodyMedium
-            )
-            if (result.output.isNotBlank()) {
-                Spacer(modifier = Modifier.height(6.dp))
+            GlassCard {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = if (result.isRootAvailable) "Root check passed" else "Root check failed",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = result.message,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    if (result.output.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Output: ${result.output}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+            if (result.isRootAvailable) {
+                Spacer(modifier = Modifier.height(10.dp))
                 Text(
-                    text = "Output: ${result.output}",
+                    text = "Opening dashboard...",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
@@ -262,80 +319,162 @@ private fun InAppDashboardScreen(modifier: Modifier) {
     var resultText by remember { mutableStateOf<String?>(null) }
 
     Column(
-        modifier = modifier.padding(20.dp),
+        modifier = modifier
+            .padding(20.dp)
+            .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        verticalArrangement = Arrangement.Top
     ) {
-        Text(
-            text = "TrueBackup Dashboard",
-            style = MaterialTheme.typography.headlineSmall
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "Permission and root checks completed.",
-            style = MaterialTheme.typography.bodyMedium
+        HeroTitle(
+            title = "TrueBackup Dashboard",
+            subtitle = "Modern root-mode backup workspace with interop-compatible archive output."
         )
         Spacer(modifier = Modifier.height(16.dp))
-        TextField(
-            value = packageName,
-            onValueChange = { packageName = it.trim() },
-            label = { Text("Package name") },
-            singleLine = true
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        TextField(
-            value = backupBasePath,
-            onValueChange = { backupBasePath = it.trim() },
-            label = { Text("Backup base path") },
-            singleLine = true
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        Button(
-            onClick = {
-                if (isPreparing) return@Button
-                if (packageName.isBlank() || backupBasePath.isBlank()) {
-                    resultText = "Package name and backup base path are required."
-                    return@Button
+        GlassCard {
+            Column(modifier = Modifier.padding(18.dp)) {
+                Text(
+                    text = "Create interoperable archive set",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedTextField(
+                    modifier = Modifier.fillMaxWidth(),
+                    value = packageName,
+                    onValueChange = { packageName = it.trim() },
+                    label = { Text("Package name") },
+                    singleLine = true
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedTextField(
+                    modifier = Modifier.fillMaxWidth(),
+                    value = backupBasePath,
+                    onValueChange = { backupBasePath = it.trim() },
+                    label = { Text("Backup base path") },
+                    singleLine = true
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+                if (isPreparing) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(10.dp))
                 }
-                isPreparing = true
-                resultText = null
-                scope.launch {
-                    val result = withContext(Dispatchers.IO) {
-                        runCatching {
-                            manager.createBackupArchives(
-                                RootBackupRequest(
-                                    packageName = packageName,
-                                    basePath = backupBasePath
-                                )
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        if (isPreparing) return@Button
+                        if (packageName.isBlank() || backupBasePath.isBlank()) {
+                            resultText = "Package name and backup base path are required."
+                            return@Button
+                        }
+                        isPreparing = true
+                        resultText = null
+                        scope.launch {
+                            val result = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    manager.createBackupArchives(
+                                        RootBackupRequest(
+                                            packageName = packageName,
+                                            basePath = backupBasePath
+                                        )
+                                    )
+                                }
+                            }
+                            isPreparing = false
+                            resultText = result.fold(
+                                onSuccess = {
+                                    "Created: ${it.packageDir.absolutePath}\nConfig: ${it.configFile.absolutePath}\n" +
+                                        "Parts: apk=${it.partFlags.apk}, user=${it.partFlags.userCe}, " +
+                                        "user_de=${it.partFlags.userDe}, data=${it.partFlags.extData}, " +
+                                        "obb=${it.partFlags.obb}, media=${it.partFlags.media}"
+                                },
+                                onFailure = {
+                                    "Failed to create backup skeleton: ${it.message}"
+                                }
                             )
                         }
                     }
-                    isPreparing = false
-                    resultText = result.fold(
-                        onSuccess = {
-                            "Created: ${it.packageDir.absolutePath}\nConfig: ${it.configFile.absolutePath}\n" +
-                                "Parts: apk=${it.partFlags.apk}, user=${it.partFlags.userCe}, " +
-                                "user_de=${it.partFlags.userDe}, data=${it.partFlags.extData}, " +
-                                "obb=${it.partFlags.obb}, media=${it.partFlags.media}"
-                        },
-                        onFailure = {
-                            "Failed to create backup skeleton: ${it.message}"
-                        }
+                ) {
+                    Text(text = if (isPreparing) "Preparing..." else "Create backup archives")
+                }
+            }
+        }
+        if (!resultText.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(14.dp))
+            GlassCard {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Latest operation",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = resultText ?: "",
+                        style = MaterialTheme.typography.bodySmall
                     )
                 }
             }
-        ) {
-            Text(
-                text = if (isPreparing) "Preparing..." else "Create backup archives"
-            )
         }
-        if (!resultText.isNullOrBlank()) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = resultText ?: "",
-                style = MaterialTheme.typography.bodySmall
+    }
+}
+
+@Composable
+private fun GradientBackground(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        MaterialTheme.colorScheme.surface,
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                        MaterialTheme.colorScheme.secondary.copy(alpha = 0.10f)
+                    )
+                )
             )
-        }
+    ) {
+        content()
+    }
+}
+
+@Composable
+private fun HeroTitle(
+    title: String,
+    subtitle: String
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.Start
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.bodyMedium
+        )
+    }
+}
+
+@Composable
+private fun GlassCard(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f)
+        )
+    ) {
+        content()
     }
 }
 
