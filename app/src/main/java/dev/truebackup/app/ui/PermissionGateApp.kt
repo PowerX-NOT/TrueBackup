@@ -23,6 +23,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -50,6 +51,11 @@ private data class PermissionStatus(
 fun PermissionGateApp() {
     val context = LocalContext.current
     var status by remember { mutableStateOf(currentPermissionStatus(context)) }
+    var permissionMessage by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        status = currentPermissionStatus(context)
+    }
 
     val runtimePermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -67,11 +73,27 @@ fun PermissionGateApp() {
         if (status.missingRuntimePermissions.isNotEmpty()) {
             runtimePermissionLauncher.launch(status.missingRuntimePermissions.toTypedArray())
         } else if (status.needsAllFilesAccess) {
-            val intent = Intent(
+            permissionMessage = null
+            val packageUri = Uri.parse("package:${context.packageName}")
+            val appSpecificIntent = Intent(
                 Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                Uri.parse("package:${context.packageName}")
+                packageUri
             )
-            allFilesLauncher.launch(intent)
+            val globalIntent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+            val launchIntent = when {
+                appSpecificIntent.resolveActivity(context.packageManager) != null -> appSpecificIntent
+                globalIntent.resolveActivity(context.packageManager) != null -> globalIntent
+                else -> null
+            }
+            if (launchIntent != null) {
+                runCatching {
+                    allFilesLauncher.launch(launchIntent)
+                }.onFailure {
+                    permissionMessage = "Unable to open all files access settings on this ROM."
+                }
+            } else {
+                permissionMessage = "All files access settings screen is unavailable on this device."
+            }
         }
     }
 
@@ -89,7 +111,8 @@ fun PermissionGateApp() {
                     .padding(paddingValues),
                 missingRuntimePermissions = status.missingRuntimePermissions,
                 needsAllFilesAccess = status.needsAllFilesAccess,
-                onRequest = ::requestMissingPermissions
+                onRequest = ::requestMissingPermissions,
+                message = permissionMessage
             )
         }
     }
@@ -100,7 +123,8 @@ private fun PermissionRequiredScreen(
     modifier: Modifier,
     missingRuntimePermissions: List<String>,
     needsAllFilesAccess: Boolean,
-    onRequest: () -> Unit
+    onRequest: () -> Unit,
+    message: String?
 ) {
     Column(
         modifier = modifier.padding(20.dp),
@@ -131,7 +155,14 @@ private fun PermissionRequiredScreen(
                 if (needsAllFilesAccess) {
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "All files access (Android 11+) is required.",
+                        text = "All files access (Android 11+) is required. Enable it in settings when prompted.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                if (!message.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = message,
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
