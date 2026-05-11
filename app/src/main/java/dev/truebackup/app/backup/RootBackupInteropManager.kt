@@ -34,6 +34,8 @@ class RootBackupInteropManager(
         )
         ensureBackupFolders(packageDir)
         packageDir.mkdirs()
+        // Folders were created as root; app must own the tree to write user.zip etc. on shared storage.
+        fixBackupOutputTreeOwnership(packageDir)
 
         val targetApp: ApplicationInfo? = runCatching {
             context.packageManager.getApplicationInfo(request.packageName, 0)
@@ -125,10 +127,12 @@ class RootBackupInteropManager(
             privilegedOperations.removeRecursive(stagingPath)
             return false
         }
+        chownTreeToApp(stagingPath)
         return try {
             JvmZip.zipDirectory(staging, destinationZip)
-            destinationZip.exists() && destinationZip.length() > 0L
+            destinationZip.isFile && destinationZip.canRead()
         } catch (_: Exception) {
+            destinationZip.delete()
             false
         } finally {
             privilegedOperations.removeRecursive(stagingPath)
@@ -148,23 +152,41 @@ class RootBackupInteropManager(
             privilegedOperations.removeRecursive(stagingPath)
             return false
         }
+        chownTreeToApp(stagingPath)
         return try {
             JvmZip.zipDirectory(staging, destinationZip)
-            destinationZip.exists() && destinationZip.length() > 0L
+            destinationZip.isFile && destinationZip.canRead()
         } catch (_: Exception) {
+            destinationZip.delete()
             false
         } finally {
             privilegedOperations.removeRecursive(stagingPath)
         }
     }
 
+    /**
+     * Match owner/group to a path the app already owns so we can write zips under [packageDir].
+     */
+    private fun fixBackupOutputTreeOwnership(packageDir: File) {
+        chownTreeToApp(packageDir.absolutePath)
+    }
+
+    /** Let this app's JVM read/write paths populated by root (staging or backup output). */
+    private fun chownTreeToApp(path: String) {
+        val ref = context.filesDir.absolutePath
+        val cmd =
+            "chown -R $(stat -c %u:%g '${escape(ref)}') '${escape(path)}' && " +
+                "chmod -R u+rwX '${escape(path)}'"
+        privilegedOperations.runCustom(cmd)
+    }
+
     private fun isDirectory(path: String): Boolean {
-        val result = privilegedOperations.runCustom("[ -d '${escape(path)}' ]")
+        val result = privilegedOperations.runCustom("test -d '${escape(path)}'")
         return result.isSuccess
     }
 
     private fun isFile(path: String): Boolean {
-        val result = privilegedOperations.runCustom("[ -f '${escape(path)}' ]")
+        val result = privilegedOperations.runCustom("test -f '${escape(path)}'")
         return result.isSuccess
     }
 
