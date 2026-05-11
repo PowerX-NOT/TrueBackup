@@ -3,6 +3,7 @@ package dev.truebackup.app.backup
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.os.Build
+import android.os.Process
 import dev.truebackup.app.root.PrivilegedOperations
 import java.io.File
 import java.util.UUID
@@ -18,53 +19,96 @@ data class RootBackupPlanResult(
     val partFlags: BackupPartFlags
 )
 
+/**
+ * Internal (CE/DE) and external paths follow Android-DataBackup
+ * ([com.xayah.core.util.PathUtil], [com.xayah.core.data.util.DataType.srcDir]):
+ * `/data/user/<userId>/<packageName>`, `/data/user_de/<userId>/<packageName>`,
+ * `/data/media/<userId>/Android/{data,obb,media}/<packageName>`.
+ *
+ * Staging uses the same tar + --exclude strategy as
+ * [com.xayah.core.service.util.PackagesBackupUtil.backupData], then [JvmZip] writes user.zip.
+ */
 class RootBackupInteropManager(
     private val context: Context,
     private val privilegedOperations: PrivilegedOperations = PrivilegedOperations()
 ) {
     private val configWriter = PackageBackupConfigWriter(context)
-    private val extDataBase = "/data/media/0/Android/data"
-    private val obbBase = "/data/media/0/Android/obb"
-    private val mediaBase = "/data/media/0/Android/media"
 
     fun createBackupArchives(request: RootBackupRequest): RootBackupPlanResult {
+        val userId = userIdFromUid(Process.myUid())
+        val packageName = request.packageName
+
         val packageDir = BackupInteropLayout.packageBackupDir(
             basePath = request.basePath,
-            packageName = request.packageName
+            packageName = packageName
         )
         ensureBackupFolders(packageDir)
         packageDir.mkdirs()
-        // Folders were created as root; app must own the tree to write user.zip etc. on shared storage.
         fixBackupOutputTreeOwnership(packageDir)
 
         val targetApp: ApplicationInfo? = runCatching {
-            context.packageManager.getApplicationInfo(request.packageName, 0)
+            context.packageManager.getApplicationInfo(packageName, 0)
         }.getOrNull()
 
-        val userCePath = targetApp?.dataDir
-            ?: "/data/user/0/${request.packageName}"
-        val userDePath: String? = when {
-            targetApp != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N -> {
-                val de = targetApp.deviceProtectedDataDir
-                if (!de.isNullOrEmpty()) de else null
-            }
-            else -> "/data/user_de/0/${request.packageName}"
+        // PathUtil.getPackageUserDir + getDataSrc — same as Android-DataBackup PACKAGE_USER.
+        val userCeByProfile = "/data/user/$userId/$packageName"
+        val dataDirHint = targetApp?.dataDir
+        val userCePath = when {
+            isDirectory(userCeByProfile) -> userCeByProfile
+            !dataDirHint.isNullOrBlank() && isDirectory(dataDirHint) -> dataDirHint
+            else -> userCeByProfile
         }
 
-        val apk = zipApkIfInstalled(request.packageName, BackupInteropLayout.apkZip(packageDir))
-        val userCe = zipDirIfPresent(userCePath, BackupInteropLayout.userCeZip(packageDir))
-        val userDe = userDePath?.let { zipDirIfPresent(it, BackupInteropLayout.userDeZip(packageDir)) } ?: false
-        val extData = zipDirIfPresent(
-            "$extDataBase/${request.packageName}",
-            BackupInteropLayout.extDataZip(packageDir)
+        val userDeByProfile = "/data/user_de/$userId/$packageName"
+        val deviceDeHint =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) targetApp?.deviceProtectedDataDir else null
+        val userDePath: String? = when {
+            isDirectory(userDeByProfile) -> userDeByProfile
+            !deviceDeHint.isNullOrBlank() && isDirectory(deviceDeHint) -> deviceDeHint
+            else -> userDeByProfile.takeIf { isDirectory(it) }
+        }
+
+        val extRoot = "/data/media/$userId/Android/data"
+        val obbRoot = "/data/media/$userId/Android/obb"
+        val mediaRoot = "/data/media/$userId/Android/media"
+
+        val apk = zipApkIfInstalled(packageName, BackupInteropLayout.apkZip(packageDir))
+        val userCe = zipInternalOrExternalData(
+            parentDir = File(userCePath).parent ?: "/data/user/$userId",
+            dirEntry = packageName,
+            physicalPathForTest = userCePath,
+            destinationZip = BackupInteropLayout.userCeZip(packageDir),
+            excludes = internalDataBackupExcludes(packageName)
         )
-        val obb = zipDirIfPresent(
-            "$obbBase/${request.packageName}",
-            BackupInteropLayout.obbZip(packageDir)
+        val userDe = userDePath?.let { de ->
+            zipInternalOrExternalData(
+                parentDir = File(de).parent ?: "/data/user_de/$userId",
+                dirEntry = packageName,
+                physicalPathForTest = de,
+                destinationZip = BackupInteropLayout.userDeZip(packageDir),
+                excludes = internalDataBackupExcludes(packageName)
+            )
+        } ?: false
+        val extData = zipInternalOrExternalData(
+            parentDir = extRoot,
+            dirEntry = packageName,
+            physicalPathForTest = "$extRoot/$packageName",
+            destinationZip = BackupInteropLayout.extDataZip(packageDir),
+            excludes = externalScopedBackupExcludes(packageName)
         )
-        val media = zipDirIfPresent(
-            "$mediaBase/${request.packageName}",
-            BackupInteropLayout.mediaZip(packageDir)
+        val obb = zipInternalOrExternalData(
+            parentDir = obbRoot,
+            dirEntry = packageName,
+            physicalPathForTest = "$obbRoot/$packageName",
+            destinationZip = BackupInteropLayout.obbZip(packageDir),
+            excludes = externalScopedBackupExcludes(packageName)
+        )
+        val media = zipInternalOrExternalData(
+            parentDir = mediaRoot,
+            dirEntry = packageName,
+            physicalPathForTest = "$mediaRoot/$packageName",
+            destinationZip = BackupInteropLayout.mediaZip(packageDir),
+            excludes = externalScopedBackupExcludes(packageName)
         )
 
         val flags = BackupPartFlags(
@@ -77,7 +121,7 @@ class RootBackupInteropManager(
         )
 
         val configFile = configWriter.write(
-            packageName = request.packageName,
+            packageName = packageName,
             packageDir = packageDir,
             partFlags = flags
         )
@@ -86,6 +130,70 @@ class RootBackupInteropManager(
             configFile = configFile,
             partFlags = flags
         )
+    }
+
+    /** Matches PackagesBackupUtil.backupData exclusions for PACKAGE_USER / PACKAGE_USER_DE. */
+    private fun internalDataBackupExcludes(packageName: String): List<String> =
+        listOf(
+            "$packageName/.ota",
+            "$packageName/cache",
+            "$packageName/lib",
+            "$packageName/code_cache",
+            "$packageName/no_backup"
+        )
+
+    /** Matches PackagesBackupUtil for PACKAGE_DATA / OBB / MEDIA (cache + Backup_*). */
+    private fun externalScopedBackupExcludes(packageName: String): List<String> =
+        listOf(
+            "$packageName/cache",
+            "$packageName/Backup_*"
+        )
+
+    /**
+     * Runs `tar -C parentDir packageName` like DataBackup; [physicalPathForTest] is `parentDir/dirEntry`
+     * for existence checks when [parentDir] is not the direct parent (should not happen).
+     */
+    private fun zipInternalOrExternalData(
+        parentDir: String,
+        dirEntry: String,
+        physicalPathForTest: String,
+        destinationZip: File,
+        excludes: List<String>
+    ): Boolean {
+        if (!isDirectory(physicalPathForTest)) {
+            return false
+        }
+        val stageRoot = File(context.cacheDir, "tb_stage").apply { mkdirs() }
+        val staging = File(stageRoot, "dir_${UUID.randomUUID()}")
+        val stagingPath = staging.absolutePath
+        privilegedOperations.removeRecursive(stagingPath)
+        staging.mkdirs()
+
+        var populated = privilegedOperations.tarCopyPackageFiltered(
+            parentDir = parentDir,
+            packageDirEntry = dirEntry,
+            destDir = stagingPath,
+            excludes = excludes
+        )
+        if (!populated.isSuccess) {
+            privilegedOperations.removeRecursive(stagingPath)
+            staging.mkdirs()
+            populated = privilegedOperations.mirrorCopyDirectoryContents(physicalPathForTest, stagingPath)
+        }
+        if (!populated.isSuccess) {
+            privilegedOperations.removeRecursive(stagingPath)
+            return false
+        }
+        chownTreeToApp(stagingPath)
+        return try {
+            JvmZip.zipDirectory(staging, destinationZip)
+            destinationZip.isFile && destinationZip.canRead()
+        } catch (_: Exception) {
+            destinationZip.delete()
+            false
+        } finally {
+            privilegedOperations.removeRecursive(stagingPath)
+        }
     }
 
     private fun ensureBackupFolders(packageDir: File) {
@@ -139,39 +247,10 @@ class RootBackupInteropManager(
         }
     }
 
-    private fun zipDirIfPresent(sourceDir: String, destinationZip: File): Boolean {
-        if (!isDirectory(sourceDir)) {
-            return false
-        }
-        val stageRoot = File(context.cacheDir, "tb_stage").apply { mkdirs() }
-        val staging = File(stageRoot, "dir_${UUID.randomUUID()}")
-        val stagingPath = staging.absolutePath
-        staging.mkdirs()
-        val mirror = privilegedOperations.mirrorCopyDirectoryContents(sourceDir, stagingPath)
-        if (!mirror.isSuccess) {
-            privilegedOperations.removeRecursive(stagingPath)
-            return false
-        }
-        chownTreeToApp(stagingPath)
-        return try {
-            JvmZip.zipDirectory(staging, destinationZip)
-            destinationZip.isFile && destinationZip.canRead()
-        } catch (_: Exception) {
-            destinationZip.delete()
-            false
-        } finally {
-            privilegedOperations.removeRecursive(stagingPath)
-        }
-    }
-
-    /**
-     * Match owner/group to a path the app already owns so we can write zips under [packageDir].
-     */
     private fun fixBackupOutputTreeOwnership(packageDir: File) {
         chownTreeToApp(packageDir.absolutePath)
     }
 
-    /** Let this app's JVM read/write paths populated by root (staging or backup output). */
     private fun chownTreeToApp(path: String) {
         val ref = context.filesDir.absolutePath
         val cmd =
@@ -192,5 +271,12 @@ class RootBackupInteropManager(
 
     private fun escape(raw: String): String {
         return raw.replace("'", "'\"'\"'")
+    }
+
+    companion object {
+        /** Same partition as [android.os.UserHandle.getUserId] for typical Android builds. */
+        private const val PER_USER_RANGE = 100_000
+
+        private fun userIdFromUid(uid: Int): Int = uid / PER_USER_RANGE
     }
 }

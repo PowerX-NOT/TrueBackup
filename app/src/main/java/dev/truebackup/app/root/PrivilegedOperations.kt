@@ -2,6 +2,7 @@ package dev.truebackup.app.root
 
 enum class PrivilegedOperationType {
     MIRROR_COPY,
+    TAR_COPY,
     CHOWN_RECURSIVE,
     RELABEL_SELINUX,
     INSTALL_APK,
@@ -32,6 +33,28 @@ class PrivilegedOperations(
         val d = escapeSingleQuotes(destDir)
         val command = "mkdir -p '$d' && cp -a '$s'/'.' '$d'/ && chmod -R a+rX '$d'"
         return execute(PrivilegedOperationType.MIRROR_COPY, command)
+    }
+
+    /**
+     * Same idea as Android-DataBackup [Tar.compress]: stream-copy one directory entry from [parentDir]
+     * (e.g. `/data/user/0`) named [packageDirEntry] into [destDir] with tar --exclude patterns relative to
+     * that archive member (e.g. `com.app/cache`). Uses system `tar` (no zip binary).
+     */
+    fun tarCopyPackageFiltered(
+        parentDir: String,
+        packageDirEntry: String,
+        destDir: String,
+        excludes: List<String>
+    ): PrivilegedOperationResult {
+        val p = escapeSingleQuotes(parentDir)
+        val pkg = escapeSingleQuotes(packageDirEntry)
+        val d = escapeSingleQuotes(destDir)
+        val exClause = excludes.joinToString(" ") { pat ->
+            val escaped = escapeSingleQuotes(pat)
+            "--exclude='$escaped'"
+        }
+        val command = "mkdir -p '$d' && tar -cf - $exClause -C '$p' '$pkg' | tar -xf - -C '$d' && chmod -R a+rX '$d'"
+        return execute(PrivilegedOperationType.TAR_COPY, command)
     }
 
     fun removeRecursive(path: String): PrivilegedOperationResult {
