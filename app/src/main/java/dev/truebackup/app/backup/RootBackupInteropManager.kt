@@ -1,8 +1,11 @@
 package dev.truebackup.app.backup
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
+import android.os.Build
 import dev.truebackup.app.root.PrivilegedOperations
 import java.io.File
+import java.util.UUID
 
 data class RootBackupRequest(
     val packageName: String,
@@ -20,8 +23,6 @@ class RootBackupInteropManager(
     private val privilegedOperations: PrivilegedOperations = PrivilegedOperations()
 ) {
     private val configWriter = PackageBackupConfigWriter(context)
-    private val ceBase = "/data/user/0"
-    private val deBase = "/data/user_de/0"
     private val extDataBase = "/data/media/0/Android/data"
     private val obbBase = "/data/media/0/Android/obb"
     private val mediaBase = "/data/media/0/Android/media"
@@ -32,16 +33,25 @@ class RootBackupInteropManager(
             packageName = request.packageName
         )
         ensureBackupFolders(packageDir)
+        packageDir.mkdirs()
+
+        val targetApp: ApplicationInfo? = runCatching {
+            context.packageManager.getApplicationInfo(request.packageName, 0)
+        }.getOrNull()
+
+        val userCePath = targetApp?.dataDir
+            ?: "/data/user/0/${request.packageName}"
+        val userDePath: String? = when {
+            targetApp != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N -> {
+                val de = targetApp.deviceProtectedDataDir
+                if (!de.isNullOrEmpty()) de else null
+            }
+            else -> "/data/user_de/0/${request.packageName}"
+        }
 
         val apk = zipApkIfInstalled(request.packageName, BackupInteropLayout.apkZip(packageDir))
-        val userCe = zipDirIfPresent(
-            "$ceBase/${request.packageName}",
-            BackupInteropLayout.userCeZip(packageDir)
-        )
-        val userDe = zipDirIfPresent(
-            "$deBase/${request.packageName}",
-            BackupInteropLayout.userDeZip(packageDir)
-        )
+        val userCe = zipDirIfPresent(userCePath, BackupInteropLayout.userCeZip(packageDir))
+        val userDe = userDePath?.let { zipDirIfPresent(it, BackupInteropLayout.userDeZip(packageDir)) } ?: false
         val extData = zipDirIfPresent(
             "$extDataBase/${request.packageName}",
             BackupInteropLayout.extDataZip(packageDir)
@@ -93,39 +103,59 @@ class RootBackupInteropManager(
         }.getOrElse {
             return false
         }
-        val sourceDir = appInfo.sourceDir ?: return false
-        if (!isFile(sourceDir)) return false
+        val sourceApk = appInfo.sourceDir ?: return false
+        if (!isFile(sourceApk)) return false
 
-        val staging = "/data/local/tmp/truebackup_apk_${packageName}_${System.currentTimeMillis()}"
+        val stageRoot = File(context.cacheDir, "tb_stage").apply { mkdirs() }
+        val staging = File(stageRoot, "apk_${packageName}_${UUID.randomUUID()}")
+        val stagingPath = staging.absolutePath
         val splitSourceDirs = appInfo.splitSourceDirs?.toList().orEmpty()
 
         val builder = StringBuilder()
-        builder.append("mkdir -p '${escape(staging)}' && ")
-        builder.append("cp '${escape(sourceDir)}' '${escape("$staging/base.apk")}'")
+        builder.append("mkdir -p '${escape(stagingPath)}' && ")
+        builder.append("cp '${escape(sourceApk)}' '${escape("$stagingPath/base.apk")}'")
         splitSourceDirs.forEach { split ->
             val splitName = File(split).name
-            builder.append(" && cp '${escape(split)}' '${escape("$staging/$splitName")}'")
+            builder.append(" && cp '${escape(split)}' '${escape("$stagingPath/$splitName")}'")
         }
-        builder.append(" && cd '${escape(staging)}'")
-        builder.append(" && zip -r '${escape(destinationZip.absolutePath)}' .")
-        builder.append(" && rm -rf '${escape(staging)}'")
+        builder.append(" && chmod -R a+rX '${escape(stagingPath)}'")
 
-        val result = privilegedOperations.runCustom(builder.toString())
-        if (result.isSuccess && destinationZip.exists()) return true
-
-        privilegedOperations.runCustom("rm -rf '${escape(staging)}'")
-        return false
+        val copyResult = privilegedOperations.runCustom(builder.toString())
+        if (!copyResult.isSuccess) {
+            privilegedOperations.removeRecursive(stagingPath)
+            return false
+        }
+        return try {
+            JvmZip.zipDirectory(staging, destinationZip)
+            destinationZip.exists() && destinationZip.length() > 0L
+        } catch (_: Exception) {
+            false
+        } finally {
+            privilegedOperations.removeRecursive(stagingPath)
+        }
     }
 
     private fun zipDirIfPresent(sourceDir: String, destinationZip: File): Boolean {
         if (!isDirectory(sourceDir)) {
             return false
         }
-        val zip = privilegedOperations.zipDirectory(
-            sourceDir = sourceDir,
-            destinationZip = destinationZip.absolutePath
-        )
-        return zip.isSuccess && destinationZip.exists()
+        val stageRoot = File(context.cacheDir, "tb_stage").apply { mkdirs() }
+        val staging = File(stageRoot, "dir_${UUID.randomUUID()}")
+        val stagingPath = staging.absolutePath
+        staging.mkdirs()
+        val mirror = privilegedOperations.mirrorCopyDirectoryContents(sourceDir, stagingPath)
+        if (!mirror.isSuccess) {
+            privilegedOperations.removeRecursive(stagingPath)
+            return false
+        }
+        return try {
+            JvmZip.zipDirectory(staging, destinationZip)
+            destinationZip.exists() && destinationZip.length() > 0L
+        } catch (_: Exception) {
+            false
+        } finally {
+            privilegedOperations.removeRecursive(stagingPath)
+        }
     }
 
     private fun isDirectory(path: String): Boolean {

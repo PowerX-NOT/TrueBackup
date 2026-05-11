@@ -1,8 +1,7 @@
 package dev.truebackup.app.root
 
 enum class PrivilegedOperationType {
-    ZIP,
-    UNZIP,
+    MIRROR_COPY,
     CHOWN_RECURSIVE,
     RELABEL_SELINUX,
     INSTALL_APK,
@@ -24,14 +23,19 @@ data class PrivilegedOperationResult(
 class PrivilegedOperations(
     private val rootCommandExecutor: RootCommandExecutor = RootCommandExecutor()
 ) {
-    fun zipDirectory(sourceDir: String, destinationZip: String): PrivilegedOperationResult {
-        val command = "cd '${escapeSingleQuotes(sourceDir)}' && zip -r '${escapeSingleQuotes(destinationZip)}' ."
-        return execute(PrivilegedOperationType.ZIP, command)
+    /**
+     * Copy all contents of [sourceDir] into [destDir] (must exist or be created), then chmod so the app UID can read.
+     * Used to stage privileged paths into app cache before [JvmZip.zipDirectory].
+     */
+    fun mirrorCopyDirectoryContents(sourceDir: String, destDir: String): PrivilegedOperationResult {
+        val s = escapeSingleQuotes(sourceDir)
+        val d = escapeSingleQuotes(destDir)
+        val command = "mkdir -p '$d' && cp -a '$s'/'.' '$d'/ && chmod -R a+rX '$d'"
+        return execute(PrivilegedOperationType.MIRROR_COPY, command)
     }
 
-    fun unzipArchive(archivePath: String, destinationDir: String): PrivilegedOperationResult {
-        val command = "unzip -o '${escapeSingleQuotes(archivePath)}' -d '${escapeSingleQuotes(destinationDir)}'"
-        return execute(PrivilegedOperationType.UNZIP, command)
+    fun removeRecursive(path: String): PrivilegedOperationResult {
+        return runCustom("rm -rf '${escapeSingleQuotes(path)}'")
     }
 
     fun chownRecursive(ownerGroup: String, targetPath: String): PrivilegedOperationResult {
