@@ -39,9 +39,9 @@ class RootBackupInteropManager(
     private val configWriter = PackageBackupConfigWriter(context)
 
     fun createBackupArchives(request: RootBackupRequest): RootBackupPlanResult {
-        val userId = userIdFromUid(Process.myUid())
+        val shellUserId = userIdFromUid(Process.myUid())
         val packageName = request.packageName
-        Log.i(TAG, "createBackupArchives pkg=$packageName userId=$userId myUid=${Process.myUid()} owner=${appOwnerSpec()}")
+        Log.i(TAG, "createBackupArchives pkg=$packageName shellUserId=$shellUserId myUid=${Process.myUid()} owner=${appOwnerSpec()}")
 
         val packageDir = BackupInteropLayout.packageBackupDir(
             basePath = request.basePath,
@@ -55,31 +55,38 @@ class RootBackupInteropManager(
             context.packageManager.getApplicationInfo(packageName, 0)
         }.getOrNull()
 
-        // PathUtil.getPackageUserDir + getDataSrc — same as Android-DataBackup PACKAGE_USER.
-        val userCeByProfile = "/data/user/$userId/$packageName"
-        val dataDirHint = targetApp?.dataDir
-        val userCePath = when {
-            isDirectory(userCeByProfile) -> userCeByProfile
-            !dataDirHint.isNullOrBlank() && isDirectory(dataDirHint) -> dataDirHint
-            else -> userCeByProfile
-        }
+        val pathUserId = inferPathUserId(targetApp?.dataDir, shellUserId)
+        Log.i(TAG, "pathUserId=$pathUserId (from dataDir=${targetApp?.dataDir})")
 
-        val userDeByProfile = "/data/user_de/$userId/$packageName"
+        val userCeByProfile = "/data/user/$pathUserId/$packageName"
+        val dataDirHint = targetApp?.dataDir?.trim()?.takeIf { it.isNotEmpty() }
+        val legacyData = "/data/data/$packageName"
+        val userCePath = listOfNotNull(
+            dataDirHint,
+            userCeByProfile,
+            "/data/user/$shellUserId/$packageName",
+            legacyData
+        ).distinct().firstOrNull { isDirectory(it) }
+            ?: userCeByProfile
+
+        val userDeByProfile = "/data/user_de/$pathUserId/$packageName"
         val deviceDeHint =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) targetApp?.deviceProtectedDataDir else null
-        val userDePath: String? = when {
-            isDirectory(userDeByProfile) -> userDeByProfile
-            !deviceDeHint.isNullOrBlank() && isDirectory(deviceDeHint) -> deviceDeHint
-            else -> userDeByProfile.takeIf { isDirectory(it) }
-        }
+        val userDePath: String? = listOfNotNull(
+            deviceDeHint?.trim()?.takeIf { it.isNotEmpty() },
+            userDeByProfile,
+            "/data/user_de/$shellUserId/$packageName"
+        ).distinct().firstOrNull { isDirectory(it) }
 
-        val extRoot = "/data/media/$userId/Android/data"
-        val obbRoot = "/data/media/$userId/Android/obb"
-        val mediaRoot = "/data/media/$userId/Android/media"
+        val extRoot = "/data/media/$pathUserId/Android/data"
+        val obbRoot = "/data/media/$pathUserId/Android/obb"
+        val mediaRoot = "/data/media/$pathUserId/Android/media"
+
+        Log.i(TAG, "userCePath=$userCePath userDePath=$userDePath extRoot=$extRoot")
 
         val apk = zipApkIfInstalled(packageName, BackupInteropLayout.apkZip(packageDir))
         val userCe = zipInternalOrExternalData(
-            parentDir = File(userCePath).parent ?: "/data/user/$userId",
+            parentDir = File(userCePath).parent ?: "/data/user/$pathUserId",
             dirEntry = packageName,
             physicalPathForTest = userCePath,
             destinationZip = BackupInteropLayout.userCeZip(packageDir),
@@ -87,7 +94,7 @@ class RootBackupInteropManager(
         )
         val userDe = userDePath?.let { de ->
             zipInternalOrExternalData(
-                parentDir = File(de).parent ?: "/data/user_de/$userId",
+                parentDir = File(de).parent ?: "/data/user_de/$pathUserId",
                 dirEntry = packageName,
                 physicalPathForTest = de,
                 destinationZip = BackupInteropLayout.userDeZip(packageDir),
@@ -351,5 +358,12 @@ class RootBackupInteropManager(
         private const val PER_USER_RANGE = 100_000
 
         private fun userIdFromUid(uid: Int): Int = uid / PER_USER_RANGE
+
+        /** Prefer user id encoded in [dataDir] (e.g. `/data/user/10/pkg`) for work profiles. */
+        private fun inferPathUserId(dataDir: String?, fallbackShellUser: Int): Int {
+            if (dataDir.isNullOrBlank()) return fallbackShellUser
+            val m = Regex("""/data/(?:user|media)/(\d+)/""").find(dataDir)
+            return m?.groupValues?.get(1)?.toIntOrNull() ?: fallbackShellUser
+        }
     }
 }
