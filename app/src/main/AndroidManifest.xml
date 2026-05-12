@@ -21,7 +21,8 @@
         android:theme="@style/Theme.StayMates">
         <activity
             android:name="dev.truebackup.app.MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:enableOnBackInvokedCallback="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
