@@ -88,14 +88,68 @@ class RootRestoreInteropManager(
             if (apks.isEmpty()) {
                 throw IllegalStateException("No .apk entries in ${apkZip.name}")
             }
-            val paths = apks.joinToString(" ") { "'${escape(it.absolutePath)}'" }
-            val r = privilegedOperations.runCustom("pm install-multiple -r $paths")
-            if (!r.isSuccess) {
-                throw IllegalStateException("pm install-multiple failed: ${r.output.take(400)}")
+            if (apks.size == 1) {
+                val r = privilegedOperations.installApk(apks.single().absolutePath)
+                if (!r.isSuccess) {
+                    throw IllegalStateException("pm install failed: ${r.output.take(400)}")
+                }
+            } else {
+                // Avoid `pm install-multiple`: some OEM shells truncate the subcommand ("install-multipl")
+                // and report an unknown command. Session install uses shorter verbs and works widely.
+                installSplitApksViaPmSession(apks)
             }
         } finally {
             staging.deleteRecursively()
         }
+    }
+
+    /**
+     * Installs split/base APK sets using `pm install-create`, `pm install-write`, and `pm install-commit`.
+     */
+    private fun installSplitApksViaPmSession(apks: List<File>) {
+        val totalSize = apks.sumOf { it.length() }
+        val create = privilegedOperations.runCustom(
+            "pm install-create -r -t -d -S $totalSize"
+        )
+        if (!create.isSuccess) {
+            throw IllegalStateException(
+                "pm install-create failed (split APK install): ${create.output.take(400)}"
+            )
+        }
+        val sessionId = parsePmInstallSessionId(create.output)
+            ?: throw IllegalStateException(
+                "Could not parse install session id from: ${create.output.take(400)}"
+            )
+        var committed = false
+        try {
+            for (apk in apks) {
+                val size = apk.length()
+                val split = escape(apk.name)
+                val path = escape(apk.absolutePath)
+                val write = privilegedOperations.runCustom(
+                    "pm install-write -S $size $sessionId '$split' '$path'"
+                )
+                if (!write.isSuccess) {
+                    throw IllegalStateException(
+                        "pm install-write failed for ${apk.name}: ${write.output.take(400)}"
+                    )
+                }
+            }
+            val commit = privilegedOperations.runCustom("pm install-commit $sessionId")
+            if (!commit.isSuccess) {
+                throw IllegalStateException("pm install-commit failed: ${commit.output.take(400)}")
+            }
+            committed = true
+        } finally {
+            if (!committed) {
+                privilegedOperations.runCustom("pm install-abandon $sessionId")
+            }
+        }
+    }
+
+    private fun parsePmInstallSessionId(output: String): Int? {
+        val text = output.lineSequence().firstOrNull { it.contains('[') } ?: output
+        return Regex("""\[(\d+)]""").find(text)?.groupValues?.get(1)?.toIntOrNull()
     }
 
     private fun restoreZipTree(zip: File, destDir: String, uid: Int, gid: Int, chmodOctal: String? = null) {
