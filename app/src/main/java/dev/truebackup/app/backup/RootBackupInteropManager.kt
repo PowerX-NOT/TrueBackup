@@ -22,7 +22,7 @@ data class RootBackupPlanResult(
 )
 
 /**
- * Backs up CE/DE and scoped storage paths (DataBackup-style layout), stages with root `cp`/`tar`,
+ * Backs up CE/DE and scoped storage paths (DataBackup-style layout), stages with root filtered `tar`,
  * rechowns to this app via [Os.stat], then [JvmZip] writes zips under [BackupInteropLayout].
  */
 class RootBackupInteropManager(
@@ -178,17 +178,12 @@ class RootBackupInteropManager(
         privilegedOperations.removeRecursive(stagingPath)
         staging.mkdirs()
 
-        var populated = privilegedOperations.tarCopyPackageFiltered(
+        val populated = privilegedOperations.tarCopyPackageFiltered(
             parentDir = parentDir,
             packageDirEntry = dirEntry,
             destDir = stagingPath,
             excludes = excludes
         )
-        if (!populated.isSuccess) {
-            privilegedOperations.removeRecursive(stagingPath)
-            staging.mkdirs()
-            populated = privilegedOperations.mirrorCopyDirectoryContents(physicalPathForTest, stagingPath)
-        }
         if (!populated.isSuccess) {
             privilegedOperations.removeRecursive(stagingPath)
             Log.e(TAG, "$label stage failed $physicalPathForTest exit=${populated.exitCode} ${populated.output.take(300)}")

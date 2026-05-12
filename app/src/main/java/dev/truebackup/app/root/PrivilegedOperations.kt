@@ -1,7 +1,6 @@
 package dev.truebackup.app.root
 
 enum class PrivilegedOperationType {
-    MIRROR_COPY,
     TAR_COPY,
     CHOWN_RECURSIVE,
     RELABEL_SELINUX,
@@ -25,19 +24,8 @@ class PrivilegedOperations(
     private val rootCommandExecutor: RootCommandExecutor = RootCommandExecutor()
 ) {
     /**
-     * Copy all contents of [sourceDir] into [destDir] (must exist or be created), then chmod so the app UID can read.
-     * Used to stage privileged paths into app cache before [JvmZip.zipDirectory].
-     */
-    fun mirrorCopyDirectoryContents(sourceDir: String, destDir: String): PrivilegedOperationResult {
-        val s = escapeSingleQuotes(sourceDir)
-        val d = escapeSingleQuotes(destDir)
-        val command = "mkdir -p '$d' && cp -a '$s'/'.' '$d'/ && chmod -R a+rX '$d'"
-        return execute(PrivilegedOperationType.MIRROR_COPY, command)
-    }
-
-    /**
      * Stream-copy [packageDirEntry] from under [parentDir] into [destDir] with tar --exclude (before extract).
-     * Extract uses --strip-components=1 so [destDir] matches [mirrorCopyDirectoryContents] layout for zipping.
+     * Extract uses --strip-components=1 so [destDir] has package files at the root (same shape as zipping from CE dir).
      */
     fun tarCopyPackageFiltered(
         parentDir: String,
