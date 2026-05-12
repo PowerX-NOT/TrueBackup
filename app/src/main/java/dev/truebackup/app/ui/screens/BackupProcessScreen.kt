@@ -29,7 +29,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -38,14 +37,11 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ProgressIndicatorDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -98,7 +94,6 @@ fun BackupProcessScreen(
 ) {
     val context = LocalContext.current
     val manager = remember { RootBackupInteropManager(context) }
-    val listState = rememberLazyListState()
 
     val entries = remember {
         mutableStateListOf(*packages.map { (pkg, label) ->
@@ -127,7 +122,6 @@ fun BackupProcessScreen(
             withContext(Dispatchers.Main) {
                 currentIndex = index
                 entries[index] = entries[index].copy(status = PackageBackupStatus.IN_PROGRESS)
-                listState.animateScrollToItem(index)
             }
             val result = withContext(Dispatchers.IO) {
                 runCatching {
@@ -194,11 +188,14 @@ fun BackupProcessScreen(
 
             // ── Per-app list ─────────────────────────────────────────────────
             LazyColumn(
-                state = listState,
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(entries, key = { it.packageName }) { entry ->
+                items(
+                    items = entries,
+                    key = { it.packageName },
+                    contentType = { "backup_row" }
+                ) { entry ->
                     AppBackupRow(entry = entry, isActive = currentIndex < packages.size &&
                             packages.getOrNull(currentIndex)?.first == entry.packageName)
                 }
@@ -371,7 +368,7 @@ private fun AppBackupRow(entry: PackageBackupEntry, isActive: Boolean) {
 
             // Tiny dot indicator for active item
             if (isActive && entry.status == PackageBackupStatus.IN_PROGRESS) {
-                val pulse by rememberInfiniteTransition(label = "pulse").animateFloat(
+                val pulse by rememberInfiniteTransition(label = "pulse_${entry.packageName}").animateFloat(
                     initialValue = 0.4f,
                     targetValue = 1f,
                     animationSpec = infiniteRepeatable(
