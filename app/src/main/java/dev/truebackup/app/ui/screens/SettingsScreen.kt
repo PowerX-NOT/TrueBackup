@@ -114,88 +114,6 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
         Text("Runtime behavior and backup preferences.", style = MaterialTheme.typography.bodyMedium)
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ── Root status card ─────────────────────────────────────────────────
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Root status", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Spacer(modifier = Modifier.height(8.dp))
-
-                AnimatedVisibility(
-                    visible = isCheckingRoot,
-                    enter = expandVertically(tween(250)) + fadeIn(tween(250)),
-                    exit = shrinkVertically(tween(200)) + fadeOut(tween(150))
-                ) {
-                    Column {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-                }
-
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        if (isCheckingRoot) return@Button
-                        isCheckingRoot = true
-                        rootResult = null
-                        scope.launch {
-                            rootResult = withContext(Dispatchers.IO) { preflight.verify() }
-                            isCheckingRoot = false
-                        }
-                    }
-                ) {
-                    Text(if (isCheckingRoot) "Checking..." else "Run root preflight")
-                }
-
-                AnimatedVisibility(
-                    visible = rootResult != null,
-                    enter = expandVertically(tween(300)) + fadeIn(tween(300)),
-                    exit = shrinkVertically(tween(200)) + fadeOut(tween(150))
-                ) {
-                    rootResult?.let { result ->
-                        Column {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Text(result.message, style = MaterialTheme.typography.bodyMedium)
-                            if (result.output.isNotBlank()) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text("Output: ${result.output}", style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // ── Backup destination card ───────────────────────────────────────────
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    "Backup destination",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                FolderPathDisplay(path = backupBasePath)
-
-                Spacer(modifier = Modifier.height(10.dp))
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = { folderPicker.launch(null) }
-                ) {
-                    Text(if (backupBasePath.isNullOrBlank()) "Choose backup folder" else "Change folder")
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-
-                SettingRow(
-                    title = "Verify root on startup",
-                    checked = verifyRootAtStartup,
-                    onCheckedChange = { verifyRootAtStartup = it }
-                )
-            }
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-
         // ── Security (registration password / TBK1) ───────────────────────────
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -275,6 +193,88 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
                     }
                 ) {
                     Text("Clear password")
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // ── Backup destination card ───────────────────────────────────────────
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    "Backup destination",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                FolderPathDisplay(path = backupBasePath)
+
+                Spacer(modifier = Modifier.height(10.dp))
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { folderPicker.launch(null) }
+                ) {
+                    Text(if (backupBasePath.isNullOrBlank()) "Choose backup folder" else "Change folder")
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+
+                SettingRow(
+                    title = "Verify root on startup",
+                    checked = verifyRootAtStartup,
+                    onCheckedChange = { verifyRootAtStartup = it }
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // ── Root status card ─────────────────────────────────────────────────
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Root status", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(8.dp))
+
+                AnimatedVisibility(
+                    visible = isCheckingRoot,
+                    enter = expandVertically(tween(250)) + fadeIn(tween(250)),
+                    exit = shrinkVertically(tween(200)) + fadeOut(tween(150))
+                ) {
+                    Column {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                }
+
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        if (isCheckingRoot) return@Button
+                        isCheckingRoot = true
+                        rootResult = null
+                        scope.launch {
+                            rootResult = withContext(Dispatchers.IO) { preflight.verify() }
+                            isCheckingRoot = false
+                        }
+                    }
+                ) {
+                    Text(if (isCheckingRoot) "Checking..." else "Run root preflight")
+                }
+
+                AnimatedVisibility(
+                    visible = rootResult != null,
+                    enter = expandVertically(tween(300)) + fadeIn(tween(300)),
+                    exit = shrinkVertically(tween(200)) + fadeOut(tween(150))
+                ) {
+                    rootResult?.let { result ->
+                        Column {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(result.message, style = MaterialTheme.typography.bodyMedium)
+                            if (result.output.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Output: ${result.output}", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
                 }
             }
         }
