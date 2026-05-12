@@ -2,4 +2,19 @@
     <string name="app_name">TrueBackup</string>
     <string name="backup_back_blocked_toast">Backup in progress. Wait until it finishes.</string>
     <string name="restore_back_blocked_toast">Restore in progress. Wait until it finishes.</string>
+    <string name="password_new">New password</string>
+    <string name="password_confirm">Confirm password</string>
+    <string name="password_old">Old password</string>
+    <string name="password_register">Register password</string>
+    <string name="password_change">Change password</string>
+    <string name="password_mismatch">Passwords do not match.</string>
+    <string name="password_backup_mismatch">Backup data has been detected. The currently entered password does not match the password used to encrypt the existing backup. Please register using the old password, or clear the backup folder to register a new password.</string>
+    <string name="password_rekey_failed">Could not re-encrypt existing backups with the new password. Nothing was changed.</string>
+    <string name="password_wrong_old">Old password is incorrect.</string>
+    <string name="password_save_failed">Could not save password.</string>
+    <string name="password_enter_new">Enter a new password.</string>
+    <string name="password_enter_all">Fill all password fields.</string>
+    <string name="password_saved">Password saved.</string>
+    <string name="password_changed">Password changed.</string>
+    <string name="password_cleared">Password cleared.</string>
 </resources>

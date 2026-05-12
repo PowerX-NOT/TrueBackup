@@ -35,6 +35,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,7 +50,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.truebackup.app.R
+import dev.truebackup.app.backup.BackupTbk1Tree
 import dev.truebackup.app.root.RootPreflight
 import dev.truebackup.app.root.RootPreflightResult
 import dev.truebackup.app.settings.AppSettingsRepository
@@ -69,8 +73,18 @@ fun SettingsScreen() {
     val backupBasePath by repo.backupBasePath.collectAsState(initial = null)
     val encryptionEnabled by repo.backupEncryptionEnabled.collectAsState(initial = false)
 
+    var hasRegisteredPassword by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        hasRegisteredPassword = withContext(Dispatchers.IO) { passwordStore.isConfigured() }
+    }
+
+    var registerNew by remember { mutableStateOf("") }
+    var registerConfirm by remember { mutableStateOf("") }
+    var changeOld by remember { mutableStateOf("") }
+    var changeNew by remember { mutableStateOf("") }
+    var changeConfirm by remember { mutableStateOf("") }
+    var passwordPolicyError by remember { mutableStateOf<String?>(null) }
     var verifyRootAtStartup by remember { mutableStateOf(true) }
-    var passwordDraft by remember { mutableStateOf("") }
     var isCheckingRoot by remember { mutableStateOf(false) }
     var rootResult by remember { mutableStateOf<RootPreflightResult?>(null) }
 
@@ -183,59 +197,244 @@ fun SettingsScreen() {
                 )
                 Text(
                     "Uses the same TBK1 format as system TrueBackup (truebackupd). " +
-                        "Save a registration password below; ROM and this app must use the same passphrase to share encrypted archives.",
+                        "Register the same passphrase used on the ROM to open existing encrypted backups; " +
+                        "turn on “Encrypt new backups” only after a password is saved.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 6.dp)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = passwordDraft,
-                    onValueChange = { passwordDraft = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Registration password") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+
+                passwordPolicyError?.let { msg ->
+                    Text(
+                        text = msg,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
+
+                if (!hasRegisteredPassword) {
+                    Text(
+                        "Register password",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = registerNew,
+                        onValueChange = { registerNew = it; passwordPolicyError = null },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.password_new)) },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = registerConfirm,
+                        onValueChange = { registerConfirm = it; passwordPolicyError = null },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.password_confirm)) },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
                     Button(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                         onClick = {
-                            if (passwordDraft.isBlank()) {
-                                Toast.makeText(context, "Enter a password first", Toast.LENGTH_SHORT).show()
-                                return@Button
-                            }
                             scope.launch {
-                                val ok = passwordStore.writePlaintext(passwordDraft)
-                                if (ok) {
-                                    Toast.makeText(context, "Password saved", Toast.LENGTH_SHORT).show()
-                                    passwordDraft = ""
-                                } else {
-                                    Toast.makeText(context, "Could not save password", Toast.LENGTH_SHORT).show()
+                                passwordPolicyError = null
+                                if (registerNew.isBlank()) {
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(R.string.password_enter_new),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                    return@launch
+                                }
+                                if (registerNew != registerConfirm) {
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(R.string.password_mismatch),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                    return@launch
+                                }
+                                val result = withContext(Dispatchers.IO) {
+                                    val base = backupBasePath
+                                    if (BackupTbk1Tree.hasTbk1Archives(base)) {
+                                        if (!BackupTbk1Tree.canDecryptAnyTbk1(base, registerNew, context.cacheDir)) {
+                                            return@withContext "mismatch"
+                                        }
+                                    }
+                                    if (!passwordStore.writePlaintext(registerNew)) {
+                                        return@withContext "write"
+                                    }
+                                    "ok"
+                                }
+                                when (result) {
+                                    "mismatch" -> {
+                                        passwordPolicyError =
+                                            context.getString(R.string.password_backup_mismatch)
+                                    }
+                                    "write" -> {
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(R.string.password_save_failed),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                    else -> {
+                                        hasRegisteredPassword = true
+                                        registerNew = ""
+                                        registerConfirm = ""
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(R.string.password_saved),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
                                 }
                             }
                         }
                     ) {
-                        Text("Save password")
+                        Text(stringResource(R.string.password_register))
                     }
+                } else {
+                    Text(
+                        "Change password",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = changeOld,
+                        onValueChange = { changeOld = it; passwordPolicyError = null },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.password_old)) },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = changeNew,
+                        onValueChange = { changeNew = it; passwordPolicyError = null },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.password_new)) },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = changeConfirm,
+                        onValueChange = { changeConfirm = it; passwordPolicyError = null },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.password_confirm)) },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
                     Button(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                         onClick = {
                             scope.launch {
-                                passwordStore.clear()
-                                repo.setBackupEncryptionEnabled(false)
-                                passwordDraft = ""
-                                Toast.makeText(context, "Password cleared", Toast.LENGTH_SHORT).show()
+                                passwordPolicyError = null
+                                if (changeOld.isBlank() || changeNew.isBlank()) {
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(R.string.password_enter_all),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                    return@launch
+                                }
+                                if (changeNew != changeConfirm) {
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(R.string.password_mismatch),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                    return@launch
+                                }
+                                val result = withContext(Dispatchers.IO) {
+                                    val cur = passwordStore.readPlaintext()
+                                    if (cur != changeOld) {
+                                        return@withContext "old"
+                                    }
+                                    val base = backupBasePath
+                                    if (BackupTbk1Tree.hasTbk1Archives(base)) {
+                                        if (!BackupTbk1Tree.rekeyAllTbk1(base!!, changeOld, changeNew, context.cacheDir)) {
+                                            return@withContext "rekey"
+                                        }
+                                    }
+                                    if (!passwordStore.changePlaintext(changeOld, changeNew)) {
+                                        return@withContext "change"
+                                    }
+                                    "ok"
+                                }
+                                when (result) {
+                                    "old" -> Toast.makeText(
+                                        context,
+                                        context.getString(R.string.password_wrong_old),
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                    "rekey" -> Toast.makeText(
+                                        context,
+                                        context.getString(R.string.password_rekey_failed),
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                    "change" -> Toast.makeText(
+                                        context,
+                                        context.getString(R.string.password_save_failed),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                    else -> {
+                                        changeOld = ""
+                                        changeNew = ""
+                                        changeConfirm = ""
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(R.string.password_changed),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
                             }
                         }
                     ) {
-                        Text("Clear")
+                        Text(stringResource(R.string.password_change))
                     }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        scope.launch {
+                            passwordPolicyError = null
+                            withContext(Dispatchers.IO) {
+                                passwordStore.clear()
+                                repo.setBackupEncryptionEnabled(false)
+                            }
+                            hasRegisteredPassword = false
+                            registerNew = ""
+                            registerConfirm = ""
+                            changeOld = ""
+                            changeNew = ""
+                            changeConfirm = ""
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.password_cleared),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                ) {
+                    Text("Clear password")
                 }
             }
         }
