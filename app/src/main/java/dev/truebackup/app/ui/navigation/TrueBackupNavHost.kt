@@ -86,7 +86,7 @@ fun TrueBackupNavHost(
     NavHost(
         navController = navController,
         startDestination = AppDestination.Backup.route,
-        modifier = modifier,
+        modifier = modifier.fillMaxSize(),
         enterTransition = screenEnterTransition,
         exitTransition = screenExitTransition,
         popEnterTransition = screenPopEnterTransition,

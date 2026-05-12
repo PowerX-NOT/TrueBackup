@@ -112,7 +112,7 @@ fun PermissionGateApp() {
             label = "PermissionToAppTransition"
         ) { allGranted ->
             if (allGranted) {
-                TrueBackupApp()
+                TrueBackupApp(modifier = Modifier.fillMaxSize())
             } else {
                 PermissionRequiredScreen(
                     modifier = Modifier

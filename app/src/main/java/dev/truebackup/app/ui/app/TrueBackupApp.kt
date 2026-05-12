@@ -3,6 +3,7 @@ package dev.truebackup.app.ui.app
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -18,7 +19,7 @@ import dev.truebackup.app.ui.navigation.AppDestination
 import dev.truebackup.app.ui.navigation.TrueBackupNavHost
 
 @Composable
-fun TrueBackupApp() {
+fun TrueBackupApp(modifier: Modifier = Modifier) {
     val navController = rememberNavController()
     val backStack = navController.currentBackStackEntryAsState().value
     val currentRoute = backStack?.destination?.route
@@ -28,6 +29,7 @@ fun TrueBackupApp() {
     val showBottomBar = currentRoute != AppDestination.BackupProcess.route
 
     Scaffold(
+        modifier = modifier.fillMaxSize(),
         bottomBar = {
             AnimatedVisibility(
                 visible = showBottomBar,
@@ -63,7 +65,9 @@ fun TrueBackupApp() {
     ) { innerPadding ->
         TrueBackupNavHost(
             navController = navController,
-            modifier = Modifier.padding(innerPadding)
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
         )
     }
 }
