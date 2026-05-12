@@ -36,7 +36,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -91,7 +90,6 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
     var passwordPolicyError by remember { mutableStateOf<String?>(null) }
     var showRegisterPasswordDialog by remember { mutableStateOf(false) }
     var showChangePasswordDialog by remember { mutableStateOf(false) }
-    var verifyRootAtStartup by remember { mutableStateOf(true) }
     var isCheckingRoot by remember { mutableStateOf(false) }
     var rootResult by remember { mutableStateOf<RootPreflightResult?>(null) }
 
@@ -217,13 +215,6 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
                 ) {
                     Text(if (backupBasePath.isNullOrBlank()) "Choose backup folder" else "Change folder")
                 }
-                Spacer(modifier = Modifier.height(16.dp))
-
-                SettingRow(
-                    title = "Verify root on startup",
-                    checked = verifyRootAtStartup,
-                    onCheckedChange = { verifyRootAtStartup = it }
-                )
             }
         }
         Spacer(modifier = Modifier.height(16.dp))
@@ -618,20 +609,5 @@ private fun FolderPathDisplay(path: String?) {
                 modifier = Modifier.weight(1f)
             )
         }
-    }
-}
-
-@Composable
-private fun SettingRow(
-    title: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(title, style = MaterialTheme.typography.bodyLarge)
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
