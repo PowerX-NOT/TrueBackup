@@ -28,3 +28,14 @@ fun NavHostController.popBackToBackupFromProcess(): Boolean {
         saveState = false
     )
 }
+
+/**
+ * Closes [AppDestination.RestoreProcess] and returns to the Restore tab.
+ */
+fun NavHostController.popBackToRestoreFromProcess(): Boolean {
+    return popBackStack(
+        route = AppDestination.Restore.route,
+        inclusive = false,
+        saveState = false
+    )
+}

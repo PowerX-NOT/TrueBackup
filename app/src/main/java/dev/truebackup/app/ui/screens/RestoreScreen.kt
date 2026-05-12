@@ -1,44 +1,316 @@
 package dev.truebackup.app.ui.screens
 
+import android.graphics.Bitmap
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.drawable.toBitmap
+import dev.truebackup.app.backup.InteropBackedUpPackage
+import dev.truebackup.app.backup.InteropBackupIndex
+import dev.truebackup.app.settings.AppSettingsRepository
+import dev.truebackup.app.ui.navigation.RestoreProcessArgs
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 
 @Composable
-fun RestoreScreen() {
+fun RestoreScreen(onStartRestore: (RestoreProcessArgs) -> Unit) {
+    val context = LocalContext.current
+    val repo = remember(context) { AppSettingsRepository(context) }
+    val basePath by repo.backupBasePath.collectAsState(initial = null)
+
+    var backedUp by remember { mutableStateOf<List<InteropBackedUpPackage>>(emptyList()) }
+    LaunchedEffect(basePath) {
+        val bp = basePath?.trim()?.takeIf { it.isNotEmpty() }
+        backedUp = if (bp != null) {
+            withContext(Dispatchers.IO) { InteropBackupIndex.listBackedUpPackages(bp) }
+        } else {
+            emptyList()
+        }
+    }
+
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedPackages by remember { mutableStateOf(setOf<String>()) }
+
+    val filtered = remember(backedUp, searchQuery) {
+        if (searchQuery.isBlank()) backedUp
+        else {
+            val q = searchQuery.trim().lowercase()
+            backedUp.filter {
+                it.label.lowercase().contains(q) || it.packageName.lowercase().contains(q)
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(20.dp),
+            .padding(16.dp),
         verticalArrangement = Arrangement.Top
     ) {
-        Text("Restore", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Spacer(modifier = Modifier.height(6.dp))
-        Text("Import and restore backup archives.", style = MaterialTheme.typography.bodyMedium)
-        Spacer(modifier = Modifier.height(16.dp))
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    "Restore workflow module is next: config parsing, archive extraction, chown/relabel, and APK install hooks.",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Button(onClick = {}, modifier = Modifier.fillMaxWidth(), enabled = false) {
-                    Text("Restore from selected backup (coming soon)")
+        Text(
+            "Restore apps",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            "Apps found under your backup folder (same layout as TrueBackup / DataBackup).",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        PillSearchBarRestore(
+            query = searchQuery,
+            onQueryChange = { searchQuery = it },
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Selected: ${selectedPackages.size}",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Button(
+                enabled = selectedPackages.isNotEmpty() && !basePath.isNullOrBlank(),
+                onClick = {
+                    val selected = backedUp.filter { selectedPackages.contains(it.packageName) }
+                    onStartRestore(RestoreProcessArgs(packages = selected))
+                }
+            ) {
+                Text("Restore")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        if (basePath.isNullOrBlank()) {
+            Text(
+                "Choose a backup folder in Settings first.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        } else if (backedUp.isEmpty()) {
+            Text(
+                "No backups found (expected backup/apps/<package>/package_restore_config.json).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        ) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.Top
+            ) {
+                items(
+                    items = filtered,
+                    key = { it.packageName },
+                    contentType = { "restore_pick_row" }
+                ) { pkg ->
+                    val checked = selectedPackages.contains(pkg.packageName)
+                    RestorePickRow(
+                        item = pkg,
+                        checked = checked,
+                        onCheckedChange = { enabled ->
+                            selectedPackages = if (enabled) {
+                                selectedPackages + pkg.packageName
+                            } else {
+                                selectedPackages - pkg.packageName
+                            }
+                        },
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
                 }
             }
         }
     }
+}
+
+private object RestoreAppIconCache {
+    private const val SIZE_PX = 96
+    private val map = ConcurrentHashMap<String, Bitmap?>()
+
+    fun peek(packageName: String): Bitmap? = map[packageName]
+
+    suspend fun load(context: android.content.Context, packageName: String): Bitmap? {
+        if (map.containsKey(packageName)) return map[packageName]
+        val decoded = withContext(Dispatchers.IO) {
+            runCatching {
+                context.packageManager.getApplicationIcon(packageName).toBitmap(SIZE_PX, SIZE_PX)
+            }.getOrNull()
+        }
+        map[packageName] = decoded
+        return decoded
+    }
+}
+
+@Composable
+private fun RestorePickRow(
+    item: InteropBackedUpPackage,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    var bitmap by remember(item.packageName) {
+        mutableStateOf(RestoreAppIconCache.peek(item.packageName))
+    }
+    LaunchedEffect(item.packageName) {
+        if (bitmap == null) {
+            bitmap = RestoreAppIconCache.load(context, item.packageName)
+        }
+    }
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val bmp = bitmap
+            if (bmp != null) {
+                val imageBitmap = remember(bmp) { bmp.asImageBitmap() }
+                Image(
+                    bitmap = imageBitmap,
+                    contentDescription = item.label,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = item.label.take(1).uppercase(),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(item.label, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    item.packageName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Checkbox(
+                checked = checked,
+                onCheckedChange = onCheckedChange
+            )
+        }
+    }
+}
+
+@Composable
+private fun PillSearchBarRestore(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String = "Search backups…"
+) {
+    val scheme = MaterialTheme.colorScheme
+    val barColor = scheme.surfaceContainerHigh
+    val muted = scheme.onSurfaceVariant
+    val inputColor = scheme.onSurface
+
+    BasicTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = modifier.heightIn(min = 52.dp),
+        singleLine = true,
+        textStyle = MaterialTheme.typography.bodyLarge.copy(color = inputColor),
+        cursorBrush = SolidColor(scheme.primary),
+        decorationBox = { innerTextField ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(color = barColor, shape = RoundedCornerShape(percent = 50))
+                    .padding(horizontal = 18.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Search,
+                    contentDescription = "Search",
+                    tint = muted
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Box(modifier = Modifier.weight(1f)) {
+                    if (query.isEmpty()) {
+                        Text(
+                            text = placeholder,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = muted
+                        )
+                    }
+                    innerTextField()
+                }
+            }
+        }
+    )
 }

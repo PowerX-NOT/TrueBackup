@@ -19,6 +19,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import dev.truebackup.app.ui.screens.BackupProcessScreen
 import dev.truebackup.app.ui.screens.BackupScreen
+import dev.truebackup.app.ui.screens.RestoreProcessScreen
 import dev.truebackup.app.ui.screens.RestoreScreen
 import dev.truebackup.app.ui.screens.SettingsScreen
 
@@ -102,8 +103,13 @@ fun TrueBackupNavHost(
                 }
             )
         }
-        composable(AppDestination.Restore.route) {
-            RestoreScreen()
+        composable(AppDestination.Restore.route) { backStackEntry ->
+            RestoreScreen(
+                onStartRestore = { args ->
+                    backStackEntry.savedStateHandle["restore_process_args"] = args
+                    navController.navigate(AppDestination.RestoreProcess.route)
+                }
+            )
         }
         composable(AppDestination.Settings.route) {
             SettingsScreen()
@@ -136,6 +142,37 @@ fun TrueBackupNavHost(
                 onFinished = {
                     if (!navController.popBackToBackupFromProcess()) {
                         navController.navigateToMainTab(AppDestination.Backup.route)
+                    }
+                }
+            )
+        }
+        composable(
+            route = AppDestination.RestoreProcess.route,
+            enterTransition = processEnterTransition,
+            exitTransition = processExitTransition,
+            popEnterTransition = screenPopEnterTransition,
+            popExitTransition = processExitTransition
+        ) {
+            val args = navController.previousBackStackEntry
+                ?.savedStateHandle
+                ?.get<RestoreProcessArgs>("restore_process_args")
+
+            LaunchedEffect(args) {
+                if (args == null) {
+                    navController.popBackToRestoreFromProcess()
+                }
+            }
+
+            if (args == null) {
+                Box(modifier = Modifier.fillMaxSize())
+                return@composable
+            }
+
+            RestoreProcessScreen(
+                packages = args.packages,
+                onFinished = {
+                    if (!navController.popBackToRestoreFromProcess()) {
+                        navController.navigateToMainTab(AppDestination.Restore.route)
                     }
                 }
             )

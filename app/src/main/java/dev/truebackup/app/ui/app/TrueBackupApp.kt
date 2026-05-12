@@ -27,7 +27,8 @@ fun TrueBackupApp(modifier: Modifier = Modifier) {
     val items = AppDestination.bottomItems
 
     // Hide bottom bar on full-screen process screens
-    val showBottomBar = currentRoute != AppDestination.BackupProcess.route
+    val showBottomBar = currentRoute != AppDestination.BackupProcess.route &&
+        currentRoute != AppDestination.RestoreProcess.route
 
     Scaffold(
         modifier = modifier.fillMaxSize(),

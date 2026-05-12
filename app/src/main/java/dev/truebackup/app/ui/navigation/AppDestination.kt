@@ -8,6 +8,7 @@ import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.RestorePage
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.ui.graphics.vector.ImageVector
+import dev.truebackup.app.backup.InteropBackedUpPackage
 
 sealed class AppDestination(
     val route: String,
@@ -48,10 +49,23 @@ sealed class AppDestination(
         unselectedIcon = Icons.Outlined.Backup
     )
 
+    /** Full-screen restore processing (DataBackup-style: list → setup → this screen). */
+    data object RestoreProcess : AppDestination(
+        route = "restore_process",
+        label = "Restore Process",
+        selectedIcon = Icons.Filled.RestorePage,
+        unselectedIcon = Icons.Outlined.RestorePage
+    )
+
     companion object {
         val bottomItems = listOf(Backup, Restore, Settings)
     }
 }
+
+/** Arguments for [AppDestination.RestoreProcess] (Serializable for SavedStateHandle). */
+data class RestoreProcessArgs(
+    val packages: List<InteropBackedUpPackage>
+) : java.io.Serializable
 
 /** Arguments bundled into the back-stack entry for [AppDestination.BackupProcess]. */
 data class BackupProcessArgs(
