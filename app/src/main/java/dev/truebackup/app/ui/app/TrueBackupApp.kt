@@ -17,6 +17,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import dev.truebackup.app.ui.navigation.AppDestination
 import dev.truebackup.app.ui.navigation.TrueBackupNavHost
+import dev.truebackup.app.ui.navigation.navigateToMainTab
 
 @Composable
 fun TrueBackupApp(modifier: Modifier = Modifier) {
@@ -41,13 +42,7 @@ fun TrueBackupApp(modifier: Modifier = Modifier) {
                         NavigationBarItem(
                             selected = currentRoute == destination.route,
                             onClick = {
-                                navController.navigate(destination.route) {
-                                    launchSingleTop = true
-                                    restoreState = true
-                                    popUpTo(navController.graph.startDestinationId) {
-                                        saveState = true
-                                    }
-                                }
+                                navController.navigateToMainTab(destination.route)
                             },
                             icon = {
                                 val isSelected = currentRoute == destination.route
