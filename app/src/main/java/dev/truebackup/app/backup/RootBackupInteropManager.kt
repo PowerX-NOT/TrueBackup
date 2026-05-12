@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.os.Build
 import android.os.Process
+import android.system.Os
 import dev.truebackup.app.root.PrivilegedOperations
 import java.io.File
 import java.util.UUID
@@ -25,8 +26,9 @@ data class RootBackupPlanResult(
  * `/data/user/<userId>/<packageName>`, `/data/user_de/<userId>/<packageName>`,
  * `/data/media/<userId>/Android/{data,obb,media}/<packageName>`.
  *
- * Staging uses the same tar + --exclude strategy as
- * [com.xayah.core.service.util.PackagesBackupUtil.backupData], then [JvmZip] writes user.zip.
+ * Staging: root `cp -a` (same as a manual copy), then tar-with-excludes as fallback;
+ * [JvmZip] writes user.zip. Target tree is chowned using numeric uid:gids from [android.system.Os.stat]
+ * (shell `stat -c` is often missing on device).
  */
 class RootBackupInteropManager(
     private val context: Context,
@@ -169,22 +171,26 @@ class RootBackupInteropManager(
         privilegedOperations.removeRecursive(stagingPath)
         staging.mkdirs()
 
-        var populated = privilegedOperations.tarCopyPackageFiltered(
-            parentDir = parentDir,
-            packageDirEntry = dirEntry,
-            destDir = stagingPath,
-            excludes = excludes
-        )
+        // Prefer cp -a first (matches manual backup; works when toybox tar --exclude/pipe is flaky).
+        var populated = privilegedOperations.mirrorCopyDirectoryContents(physicalPathForTest, stagingPath)
         if (!populated.isSuccess) {
             privilegedOperations.removeRecursive(stagingPath)
             staging.mkdirs()
-            populated = privilegedOperations.mirrorCopyDirectoryContents(physicalPathForTest, stagingPath)
+            populated = privilegedOperations.tarCopyPackageFiltered(
+                parentDir = parentDir,
+                packageDirEntry = dirEntry,
+                destDir = stagingPath,
+                excludes = excludes
+            )
         }
         if (!populated.isSuccess) {
             privilegedOperations.removeRecursive(stagingPath)
             return false
         }
-        chownTreeToApp(stagingPath)
+        if (!chownTreeToApp(stagingPath)) {
+            privilegedOperations.removeRecursive(stagingPath)
+            return false
+        }
         return try {
             JvmZip.zipDirectory(staging, destinationZip)
             destinationZip.isFile && destinationZip.canRead()
@@ -235,7 +241,10 @@ class RootBackupInteropManager(
             privilegedOperations.removeRecursive(stagingPath)
             return false
         }
-        chownTreeToApp(stagingPath)
+        if (!chownTreeToApp(stagingPath)) {
+            privilegedOperations.removeRecursive(stagingPath)
+            return false
+        }
         return try {
             JvmZip.zipDirectory(staging, destinationZip)
             destinationZip.isFile && destinationZip.canRead()
@@ -248,15 +257,34 @@ class RootBackupInteropManager(
     }
 
     private fun fixBackupOutputTreeOwnership(packageDir: File) {
-        chownTreeToApp(packageDir.absolutePath)
+        if (!chownTreeToApp(packageDir.absolutePath)) {
+            throw IllegalStateException(
+                "Could not chown backup tree to app uid; int_data zips will fail. Path: ${packageDir.absolutePath}"
+            )
+        }
     }
 
-    private fun chownTreeToApp(path: String) {
-        val ref = context.filesDir.absolutePath
+    /**
+     * Android often has no GNU `stat -c`; empty `$(stat …)` breaks `chown` and leaves staging owned by
+     * the target app (e.g. u0_a463), so this process cannot read `databases/` and [JvmZip] yields empty zips.
+     * Use numeric uid:gid from [Os.stat] on our [Context.getFilesDir] (same as `ls -n` for this app).
+     */
+    private fun appOwnerSpec(): String {
+        return try {
+            val st = Os.stat(context.filesDir.absolutePath)
+            "${st.st_uid}:${st.st_gid}"
+        } catch (_: Throwable) {
+            val u = context.applicationInfo.uid
+            "$u:$u"
+        }
+    }
+
+    /** @return false if root chown/chmod failed */
+    private fun chownTreeToApp(path: String): Boolean {
+        val own = appOwnerSpec()
         val cmd =
-            "chown -R $(stat -c %u:%g '${escape(ref)}') '${escape(path)}' && " +
-                "chmod -R u+rwX '${escape(path)}'"
-        privilegedOperations.runCustom(cmd)
+            "chown -R $own '${escape(path)}' && chmod -R u+rwX '${escape(path)}'"
+        return privilegedOperations.runCustom(cmd).isSuccess
     }
 
     private fun isDirectory(path: String): Boolean {
