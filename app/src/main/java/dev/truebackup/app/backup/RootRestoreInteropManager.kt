@@ -16,7 +16,12 @@ class RootRestoreInteropManager(
     private val privilegedOperations: PrivilegedOperations = PrivilegedOperations()
 ) {
 
-    fun restoreFromInteropBackup(packageName: String, packageDir: File) {
+    fun restoreFromInteropBackup(
+        packageName: String,
+        packageDir: File,
+        /** Plaintext registration password; required when any part is TBK1 (matches ROM TrueBackup). */
+        decryptionPassword: String? = null
+    ) {
         val cfg = BackupInteropLayout.configFile(packageDir)
         if (!cfg.isFile) {
             throw IllegalStateException("Missing ${BackupInteropLayout.FILE_CONFIG} in ${packageDir.absolutePath}")
@@ -35,7 +40,7 @@ class RootRestoreInteropManager(
         val apkZip = BackupInteropLayout.apkZip(packageDir)
 
         if (!isPackageInstalled(pm, packageName) && wantApk && apkZip.isFile) {
-            installApksFromZip(apkZip)
+            installApksFromZip(apkZip, decryptionPassword)
         }
         if (!isPackageInstalled(pm, packageName)) {
             throw IllegalStateException("Package $packageName is not installed; install apk.zip first or install the app.")
@@ -49,22 +54,22 @@ class RootRestoreInteropManager(
         val mediaDest = "/data/media/$backupUserId/Android/media/$packageName"
 
         if (wantCe) {
-            restoreZipTree(BackupInteropLayout.userCeZip(packageDir), ceDest, uid, uid)
+            restoreZipTree(BackupInteropLayout.userCeZip(packageDir), ceDest, uid, uid, decryptionPassword = decryptionPassword)
         }
         if (wantDe) {
-            restoreZipTree(BackupInteropLayout.userDeZip(packageDir), deDest, uid, uid)
+            restoreZipTree(BackupInteropLayout.userDeZip(packageDir), deDest, uid, uid, decryptionPassword = decryptionPassword)
         }
         if (wantExt) {
             val gid = statGidOrUid("/data/media/$backupUserId/Android/data", uid)
-            restoreZipTree(BackupInteropLayout.extDataZip(packageDir), extDest, uid, gid, chmodOctal = "760")
+            restoreZipTree(BackupInteropLayout.extDataZip(packageDir), extDest, uid, gid, chmodOctal = "760", decryptionPassword = decryptionPassword)
         }
         if (wantObb) {
             val gid = statGidOrUid("/data/media/$backupUserId/Android/obb", uid)
-            restoreZipTree(BackupInteropLayout.obbZip(packageDir), obbDest, uid, gid, chmodOctal = "770")
+            restoreZipTree(BackupInteropLayout.obbZip(packageDir), obbDest, uid, gid, chmodOctal = "770", decryptionPassword = decryptionPassword)
         }
         if (wantMedia) {
             val gid = statGidOrUid("/data/media/$backupUserId/Android/media", uid)
-            restoreZipTree(BackupInteropLayout.mediaZip(packageDir), mediaDest, uid, gid, chmodOctal = "770")
+            restoreZipTree(BackupInteropLayout.mediaZip(packageDir), mediaDest, uid, gid, chmodOctal = "770", decryptionPassword = decryptionPassword)
         }
         restoreRuntimePermissionsFromConfig(json, packageName, backupUserId)
     }
@@ -95,15 +100,13 @@ class RootRestoreInteropManager(
         return runCatching { pm.getPackageInfo(packageName, 0); true }.getOrDefault(false)
     }
 
-    private fun installApksFromZip(apkZip: File) {
-        if (isTbk1Encrypted(apkZip)) {
-            throw IllegalStateException("Encrypted apk.zip (TBK1) is not supported in-app; use system TrueBackup restore.")
-        }
+    private fun installApksFromZip(apkZip: File, decryptionPassword: String?) {
+        val plainZip = materializePlainZip(apkZip, decryptionPassword)
         val stageRoot = File(context.cacheDir, "tb_restore_apk").apply { mkdirs() }
         val staging = File(stageRoot, "apk_${UUID.randomUUID()}")
         try {
             staging.mkdirs()
-            JvmZip.unzip(apkZip, staging)
+            JvmZip.unzip(plainZip, staging)
             val apks = staging.walkTopDown()
                 .filter { it.isFile && it.name.endsWith(".apk", ignoreCase = true) }
                 .sortedWith(compareBy({ if (it.name.equals("base.apk", true)) 0 else 1 }, { it.name }))
@@ -123,6 +126,7 @@ class RootRestoreInteropManager(
             }
         } finally {
             staging.deleteRecursively()
+            if (plainZip != apkZip) plainZip.delete()
         }
     }
 
@@ -175,16 +179,21 @@ class RootRestoreInteropManager(
         return Regex("""\[(\d+)]""").find(text)?.groupValues?.get(1)?.toIntOrNull()
     }
 
-    private fun restoreZipTree(zip: File, destDir: String, uid: Int, gid: Int, chmodOctal: String? = null) {
+    private fun restoreZipTree(
+        zip: File,
+        destDir: String,
+        uid: Int,
+        gid: Int,
+        chmodOctal: String? = null,
+        decryptionPassword: String? = null
+    ) {
         if (!zip.isFile) return
-        if (isTbk1Encrypted(zip)) {
-            throw IllegalStateException("Encrypted ${zip.name} (TBK1) is not supported in-app.")
-        }
+        val plainZip = materializePlainZip(zip, decryptionPassword)
         val stageRoot = File(context.cacheDir, "tb_restore").apply { mkdirs() }
         val staging = File(stageRoot, "unz_${UUID.randomUUID()}")
         try {
             staging.mkdirs()
-            JvmZip.unzip(zip, staging)
+            JvmZip.unzip(plainZip, staging)
             val src = staging.absolutePath
             val dst = destDir
             val chmodCmd = if (chmodOctal != null) {
@@ -201,22 +210,31 @@ class RootRestoreInteropManager(
             privilegedOperations.relabelSelinuxRecursive(dst)
         } finally {
             staging.deleteRecursively()
+            if (plainZip != zip) plainZip.delete()
         }
+    }
+
+    /**
+     * If [zip] is TBK1, decrypts to a temp plain zip using [decryptionPassword]; otherwise returns [zip].
+     */
+    private fun materializePlainZip(zip: File, decryptionPassword: String?): File {
+        if (!Tbk1Codec.isTbk1(zip)) return zip
+        if (decryptionPassword.isNullOrBlank()) {
+            throw IllegalStateException(
+                "This backup is TBK1-encrypted. Open Settings and save the same registration password used when the backup was created (ROM TrueBackup or this app)."
+            )
+        }
+        val tmp = File(context.cacheDir, "tb_plain_${UUID.randomUUID()}.zip")
+        if (!Tbk1Codec.decryptToFile(zip, tmp, decryptionPassword)) {
+            tmp.delete()
+            throw IllegalStateException("TBK1 decrypt failed for ${zip.name} (wrong password or corrupt file).")
+        }
+        return tmp
     }
 
     private fun statGidOrUid(refDir: String, uidFallback: Int): Int {
         val r = privilegedOperations.runCustom("stat -c '%g' '${escape(refDir)}' 2>/dev/null || echo $uidFallback")
         return r.output.trim().toIntOrNull() ?: uidFallback
-    }
-
-    private fun isTbk1Encrypted(file: File): Boolean {
-        if (!file.isFile || file.length() < 4) return false
-        return file.inputStream().use { ins ->
-            val m = ByteArray(4)
-            if (ins.read(m) != 4) return@use false
-            m[0] == 'T'.code.toByte() && m[1] == 'B'.code.toByte() &&
-                m[2] == 'K'.code.toByte() && m[3] == '1'.code.toByte()
-        }
     }
 
     private fun escape(raw: String): String = raw.replace("'", "'\"'\"'")

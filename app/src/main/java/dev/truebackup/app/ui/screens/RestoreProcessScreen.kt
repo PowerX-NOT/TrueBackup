@@ -66,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import dev.truebackup.app.R
 import dev.truebackup.app.backup.InteropBackedUpPackage
 import dev.truebackup.app.backup.RootRestoreInteropManager
+import dev.truebackup.app.settings.RegistrationPasswordStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
@@ -94,6 +95,7 @@ fun RestoreProcessScreen(
 ) {
     val context = LocalContext.current
     val manager = remember { RootRestoreInteropManager(context) }
+    val passwordStore = remember(context) { RegistrationPasswordStore(context) }
 
     val entries = remember {
         mutableStateListOf(*packages.map { item ->
@@ -132,6 +134,7 @@ fun RestoreProcessScreen(
             finished = true
             return@LaunchedEffect
         }
+        val decryptionPassword = withContext(Dispatchers.IO) { passwordStore.readPlaintext() }
         packages.forEachIndexed { index, item ->
             withContext(Dispatchers.Main) {
                 currentIndex = index
@@ -139,7 +142,7 @@ fun RestoreProcessScreen(
             }
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    manager.restoreFromInteropBackup(item.packageName, item.packageDir)
+                    manager.restoreFromInteropBackup(item.packageName, item.packageDir, decryptionPassword)
                 }
             }
             withContext(Dispatchers.Main) {

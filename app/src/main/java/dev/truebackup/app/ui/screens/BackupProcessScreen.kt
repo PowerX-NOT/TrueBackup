@@ -66,8 +66,11 @@ import androidx.compose.ui.unit.dp
 import dev.truebackup.app.R
 import dev.truebackup.app.backup.RootBackupInteropManager
 import dev.truebackup.app.backup.RootBackupRequest
+import dev.truebackup.app.settings.AppSettingsRepository
+import dev.truebackup.app.settings.RegistrationPasswordStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
 
@@ -99,6 +102,8 @@ fun BackupProcessScreen(
 ) {
     val context = LocalContext.current
     val manager = remember { RootBackupInteropManager(context) }
+    val settingsRepo = remember(context) { AppSettingsRepository(context) }
+    val passwordStore = remember(context) { RegistrationPasswordStore(context) }
 
     val entries = remember {
         mutableStateListOf(*packages.map { (pkg, label) ->
@@ -137,6 +142,24 @@ fun BackupProcessScreen(
             finished = true
             return@LaunchedEffect
         }
+        val encryptEnabled = settingsRepo.backupEncryptionEnabled.first()
+        val encryptionPassword = if (encryptEnabled) {
+            withContext(Dispatchers.IO) { passwordStore.readPlaintext() }
+        } else {
+            null
+        }
+        if (encryptEnabled && encryptionPassword.isNullOrBlank()) {
+            withContext(Dispatchers.Main) {
+                packages.indices.forEach { i ->
+                    entries[i] = entries[i].copy(
+                        status = PackageBackupStatus.FAILED,
+                        errorMessage = "Encryption is on but no registration password is saved in Settings."
+                    )
+                }
+                finished = true
+            }
+            return@LaunchedEffect
+        }
         packages.forEachIndexed { index, (pkg, _) ->
             withContext(Dispatchers.Main) {
                 currentIndex = index
@@ -145,7 +168,12 @@ fun BackupProcessScreen(
             val result = withContext(Dispatchers.IO) {
                 runCatching {
                     manager.createBackupArchives(
-                        RootBackupRequest(packageName = pkg, basePath = basePath)
+                        RootBackupRequest(
+                            packageName = pkg,
+                            basePath = basePath,
+                            encryptArchives = encryptEnabled,
+                            encryptionPassword = encryptionPassword
+                        )
                     )
                 }
             }

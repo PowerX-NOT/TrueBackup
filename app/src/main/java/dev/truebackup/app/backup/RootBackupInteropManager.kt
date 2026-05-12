@@ -12,7 +12,10 @@ import java.util.UUID
 
 data class RootBackupRequest(
     val packageName: String,
-    val basePath: String
+    val basePath: String,
+    /** When true, encrypts each part zip with TBK1 using [encryptionPassword] (same as ROM TrueBackup). */
+    val encryptArchives: Boolean = false,
+    val encryptionPassword: String? = null
 )
 
 data class RootBackupPlanResult(
@@ -34,6 +37,12 @@ class RootBackupInteropManager(
     fun createBackupArchives(request: RootBackupRequest): RootBackupPlanResult {
         val shellUserId = userIdFromUid(Process.myUid())
         val packageName = request.packageName
+
+        if (request.encryptArchives && request.encryptionPassword.isNullOrBlank()) {
+            throw IllegalStateException(
+                "Encryption is on but no registration password is set. Save a password in Settings first."
+            )
+        }
 
         val packageDir = BackupInteropLayout.packageBackupDir(
             basePath = request.basePath,
@@ -133,6 +142,10 @@ class RootBackupInteropManager(
 
         Log.i(TAG, "$packageName ce=$userCePath parts apk=$apk user=$userCe userDe=$userDe ext=$extData obb=$obb media=$media")
 
+        if (request.encryptArchives) {
+            maybeEncryptInteropArchives(packageDir, request.encryptionPassword!!)
+        }
+
         val configFile = configWriter.write(
             packageName = packageName,
             packageDir = packageDir,
@@ -143,6 +156,24 @@ class RootBackupInteropManager(
             configFile = configFile,
             partFlags = flags
         )
+    }
+
+    private fun maybeEncryptInteropArchives(packageDir: File, password: String) {
+        val zips = listOf(
+            BackupInteropLayout.apkZip(packageDir),
+            BackupInteropLayout.userCeZip(packageDir),
+            BackupInteropLayout.userDeZip(packageDir),
+            BackupInteropLayout.extDataZip(packageDir),
+            BackupInteropLayout.obbZip(packageDir),
+            BackupInteropLayout.mediaZip(packageDir)
+        )
+        for (z in zips) {
+            if (!z.isFile) continue
+            if (Tbk1Codec.isTbk1(z)) continue
+            if (!Tbk1Codec.encryptInPlace(z, password)) {
+                throw IllegalStateException("TBK1 encryption failed for ${z.name}")
+            }
+        }
     }
 
     private fun internalInteropExcludes(packageName: String): List<String> =

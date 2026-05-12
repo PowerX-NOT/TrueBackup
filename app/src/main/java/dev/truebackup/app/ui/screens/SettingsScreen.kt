@@ -1,6 +1,7 @@
 package dev.truebackup.app.ui.screens
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.FolderOff
@@ -29,6 +31,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -43,11 +46,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.truebackup.app.root.RootPreflight
 import dev.truebackup.app.root.RootPreflightResult
 import dev.truebackup.app.settings.AppSettingsRepository
+import dev.truebackup.app.settings.RegistrationPasswordStore
 import dev.truebackup.app.ui.util.resolvePrimaryStoragePathFromTreeUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -58,11 +64,13 @@ fun SettingsScreen() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val repo = remember(context) { AppSettingsRepository(context) }
+    val passwordStore = remember(context) { RegistrationPasswordStore(context) }
     val preflight = remember { RootPreflight() }
     val backupBasePath by repo.backupBasePath.collectAsState(initial = null)
+    val encryptionEnabled by repo.backupEncryptionEnabled.collectAsState(initial = false)
 
     var verifyRootAtStartup by remember { mutableStateOf(true) }
-    var enableEncryption by remember { mutableStateOf(false) }
+    var passwordDraft by remember { mutableStateOf("") }
     var isCheckingRoot by remember { mutableStateOf(false) }
     var rootResult by remember { mutableStateOf<RootPreflightResult?>(null) }
 
@@ -165,10 +173,70 @@ fun SettingsScreen() {
                 )
                 Spacer(modifier = Modifier.height(10.dp))
                 SettingRow(
-                    title = "Enable archive encryption",
-                    checked = enableEncryption,
-                    onCheckedChange = { enableEncryption = it }
+                    title = "Encrypt new backups (TBK1)",
+                    checked = encryptionEnabled,
+                    onCheckedChange = { enabled ->
+                        scope.launch {
+                            repo.setBackupEncryptionEnabled(enabled)
+                        }
+                    }
                 )
+                Text(
+                    "Uses the same TBK1 format as system TrueBackup (truebackupd). " +
+                        "Save a registration password below; ROM and this app must use the same passphrase to share encrypted archives.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = passwordDraft,
+                    onValueChange = { passwordDraft = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Registration password") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            if (passwordDraft.isBlank()) {
+                                Toast.makeText(context, "Enter a password first", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                            scope.launch {
+                                val ok = passwordStore.writePlaintext(passwordDraft)
+                                if (ok) {
+                                    Toast.makeText(context, "Password saved", Toast.LENGTH_SHORT).show()
+                                    passwordDraft = ""
+                                } else {
+                                    Toast.makeText(context, "Could not save password", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    ) {
+                        Text("Save password")
+                    }
+                    Button(
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            scope.launch {
+                                passwordStore.clear()
+                                repo.setBackupEncryptionEnabled(false)
+                                passwordDraft = ""
+                                Toast.makeText(context, "Password cleared", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    ) {
+                        Text("Clear")
+                    }
+                }
             }
         }
     }
@@ -198,8 +266,9 @@ private fun FolderPathDisplay(path: String?) {
             modifier = Modifier.size(28.dp)
         )
         Spacer(modifier = Modifier.width(12.dp))
-        if (hasPath && path != null) {
-            val segments = path.trimEnd('/').split('/')
+        if (hasPath) {
+            val p = path!!
+            val segments = p.trimEnd('/').split('/')
             val folderName = segments.last()
             val parentPath = segments.dropLast(1).joinToString("/").ifBlank { "/" }
             Column(modifier = Modifier.weight(1f)) {
