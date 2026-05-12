@@ -2,6 +2,7 @@ package dev.truebackup.app.ui.screens
 
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -14,9 +15,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
@@ -24,6 +27,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -32,6 +36,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +45,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
@@ -47,6 +54,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import dev.truebackup.app.settings.AppSettingsRepository
 import dev.truebackup.app.ui.navigation.BackupProcessArgs
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 
 @Composable
 fun BackupScreen(onStartBackup: (BackupProcessArgs) -> Unit) {
@@ -128,7 +138,6 @@ fun BackupScreen(onStartBackup: (BackupProcessArgs) -> Unit) {
                 enabled = selectedPackages.isNotEmpty() && !basePath.isNullOrBlank(),
                 onClick = {
                     val target = basePath ?: return@Button
-                    // Build an ordered list of (packageName, label) to pass to the process screen
                     val packageList = selectedPackages.map { pkg ->
                         val label = installedApps.find { it.packageName == pkg }?.label ?: pkg
                         pkg to label
@@ -148,75 +157,127 @@ fun BackupScreen(onStartBackup: (BackupProcessArgs) -> Unit) {
         ) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.Top
             ) {
-                items(filteredApps, key = { it.packageName }) { app ->
+                items(
+                    items = filteredApps,
+                    key = { it.packageName },
+                    contentType = { "app_row" }
+                ) { app ->
                     val checked = selectedPackages.contains(app.packageName)
-                    val appIcon = remember(app.packageName) {
-                        runCatching {
-                            context.packageManager.getApplicationIcon(app.packageName)
-                                .toBitmap(96, 96)
-                        }.getOrNull()
-                    }
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (appIcon != null) {
-                                Image(
-                                    bitmap = appIcon.asImageBitmap(),
-                                    contentDescription = app.label,
-                                    modifier = Modifier
-                                        .width(36.dp)
-                                        .height(36.dp)
-                                )
+                    BackupAppListRow(
+                        app = app,
+                        checked = checked,
+                        onCheckedChange = { enabled ->
+                            selectedPackages = if (enabled) {
+                                selectedPackages + app.packageName
                             } else {
-                                Card {
-                                    Box(
-                                        modifier = Modifier
-                                            .width(36.dp)
-                                            .height(36.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = app.label.take(1).uppercase(),
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
+                                selectedPackages - app.packageName
                             }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(app.label, style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    app.packageName,
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                            Checkbox(
-                                checked = checked,
-                                onCheckedChange = { enabled ->
-                                    selectedPackages = if (enabled) {
-                                        selectedPackages + app.packageName
-                                    } else {
-                                        selectedPackages - app.packageName
-                                    }
-                                }
-                            )
-                        }
-                    }
+                        },
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
                 }
             }
         }
     }
 }
 
+/** Decode off the main thread; survives row disposal so scroll-back does not re-rasterize on UI. */
+private object BackupAppIconCache {
+    private const val SIZE_PX = 96
+    private val map = ConcurrentHashMap<String, Bitmap>()
+
+    fun peek(packageName: String): Bitmap? = map[packageName]
+
+    suspend fun load(context: android.content.Context, packageName: String): Bitmap? {
+        peek(packageName)?.let { return it }
+        val decoded = withContext(Dispatchers.IO) {
+            runCatching {
+                context.packageManager.getApplicationIcon(packageName).toBitmap(SIZE_PX, SIZE_PX)
+            }.getOrNull()
+        } ?: return null
+        map.putIfAbsent(packageName, decoded)
+        return map[packageName]
+    }
+}
+
+@Composable
+private fun BackupAppListRow(
+    app: InstalledApp,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    var bitmap by remember(app.packageName) {
+        mutableStateOf(BackupAppIconCache.peek(app.packageName))
+    }
+    LaunchedEffect(app.packageName) {
+        if (bitmap == null) {
+            bitmap = BackupAppIconCache.load(context, app.packageName)
+        }
+    }
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val bmp = bitmap
+            if (bmp != null) {
+                val imageBitmap = remember(bmp) { bmp.asImageBitmap() }
+                Image(
+                    bitmap = imageBitmap,
+                    contentDescription = app.label,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = app.label.take(1).uppercase(),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(app.label, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    app.packageName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Checkbox(
+                checked = checked,
+                onCheckedChange = onCheckedChange
+            )
+        }
+    }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+@Immutable
 private data class InstalledApp(
     val label: String,
     val packageName: String,
@@ -241,8 +302,6 @@ private fun loadInstalledApps(context: android.content.Context): List<InstalledA
             compareBy<InstalledApp> { it.label.lowercase() }.thenBy { it.packageName }
         )
 }
-
-// Backup folder selection lives in Settings.
 
 @Composable
 private fun PillSearchBar(
