@@ -101,9 +101,12 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
         }
     }
 
+    val scrollState = rememberScrollState()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(scrollState)
             .padding(20.dp),
         verticalArrangement = Arrangement.Top
     ) {
