@@ -22,7 +22,7 @@ data class RootBackupPlanResult(
 )
 
 /**
- * Backs up CE/DE and scoped storage paths (DataBackup-style layout), stages with root filtered `tar`,
+ * Backs up CE/DE and scoped storage paths (TrueBackup interop layout), stages with root filtered `tar`,
  * rechowns to this app via [Os.stat], then [JvmZip] writes zips under [BackupInteropLayout].
  */
 class RootBackupInteropManager(
@@ -78,7 +78,7 @@ class RootBackupInteropManager(
             dirEntry = packageName,
             physicalPathForTest = userCePath,
             destinationZip = BackupInteropLayout.userCeZip(packageDir),
-            excludes = internalDataBackupExcludes(packageName)
+            excludes = internalInteropExcludes(packageName)
         )
         val userDe = userDePath?.let { de ->
             zipInternalOrExternalData(
@@ -86,7 +86,7 @@ class RootBackupInteropManager(
                 dirEntry = packageName,
                 physicalPathForTest = de,
                 destinationZip = BackupInteropLayout.userDeZip(packageDir),
-                excludes = internalDataBackupExcludes(packageName)
+                excludes = internalInteropExcludes(packageName)
             )
         } ?: false
         val extData = zipInternalOrExternalData(
@@ -145,7 +145,7 @@ class RootBackupInteropManager(
         )
     }
 
-    private fun internalDataBackupExcludes(packageName: String): List<String> =
+    private fun internalInteropExcludes(packageName: String): List<String> =
         listOf(
             "$packageName/.ota",
             "$packageName/cache",

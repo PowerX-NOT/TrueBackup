@@ -63,14 +63,17 @@ fun RestoreScreen(onStartRestore: (RestoreProcessArgs) -> Unit) {
     LaunchedEffect(basePath) {
         val bp = basePath?.trim()?.takeIf { it.isNotEmpty() }
         backedUp = if (bp != null) {
-            withContext(Dispatchers.IO) { InteropBackupIndex.listBackedUpPackages(bp) }
+            withContext(Dispatchers.IO) {
+                runCatching { InteropBackupIndex.listBackedUpPackages(bp) }.getOrElse { emptyList() }
+            }
         } else {
             emptyList()
         }
     }
 
     var searchQuery by remember { mutableStateOf("") }
-    var selectedPackages by remember { mutableStateOf(setOf<String>()) }
+    /** One folder path per row — avoids duplicate LazyColumn keys when the same package appears twice. */
+    var selectedBackupPaths by remember { mutableStateOf(setOf<String>()) }
 
     val filtered = remember(backedUp, searchQuery) {
         if (searchQuery.isBlank()) backedUp
@@ -95,7 +98,7 @@ fun RestoreScreen(onStartRestore: (RestoreProcessArgs) -> Unit) {
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            "Apps found under your backup folder (same layout as TrueBackup / DataBackup).",
+            "Apps found under your backup folder (TrueBackup interop layout).",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -114,13 +117,13 @@ fun RestoreScreen(onStartRestore: (RestoreProcessArgs) -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Selected: ${selectedPackages.size}",
+                text = "Selected: ${selectedBackupPaths.size}",
                 style = MaterialTheme.typography.bodyMedium
             )
             Button(
-                enabled = selectedPackages.isNotEmpty() && !basePath.isNullOrBlank(),
+                enabled = selectedBackupPaths.isNotEmpty() && !basePath.isNullOrBlank(),
                 onClick = {
-                    val selected = backedUp.filter { selectedPackages.contains(it.packageName) }
+                    val selected = backedUp.filter { selectedBackupPaths.contains(it.packageDir.absolutePath) }
                     onStartRestore(RestoreProcessArgs(packages = selected))
                 }
             ) {
@@ -154,18 +157,19 @@ fun RestoreScreen(onStartRestore: (RestoreProcessArgs) -> Unit) {
             ) {
                 items(
                     items = filtered,
-                    key = { it.packageName },
+                    key = { it.packageDir.absolutePath },
                     contentType = { "restore_pick_row" }
                 ) { pkg ->
-                    val checked = selectedPackages.contains(pkg.packageName)
+                    val rowKey = pkg.packageDir.absolutePath
+                    val checked = selectedBackupPaths.contains(rowKey)
                     RestorePickRow(
                         item = pkg,
                         checked = checked,
                         onCheckedChange = { enabled ->
-                            selectedPackages = if (enabled) {
-                                selectedPackages + pkg.packageName
+                            selectedBackupPaths = if (enabled) {
+                                selectedBackupPaths + rowKey
                             } else {
-                                selectedPackages - pkg.packageName
+                                selectedBackupPaths - rowKey
                             }
                         },
                         modifier = Modifier.padding(vertical = 4.dp)
@@ -178,18 +182,26 @@ fun RestoreScreen(onStartRestore: (RestoreProcessArgs) -> Unit) {
 
 private object RestoreAppIconCache {
     private const val SIZE_PX = 96
-    private val map = ConcurrentHashMap<String, Bitmap?>()
+    /** Installed-app icons only; [ConcurrentHashMap] must not store null values. */
+    private val map = ConcurrentHashMap<String, Bitmap>()
+    /** Packages we already tried and could not decode an icon (uninstalled / interop-only). */
+    private val noIcon = ConcurrentHashMap.newKeySet<String>()
 
-    fun peek(packageName: String): Bitmap? = map[packageName]
+    fun peek(packageName: String): Bitmap? {
+        if (noIcon.contains(packageName)) return null
+        return map[packageName]
+    }
 
     suspend fun load(context: android.content.Context, packageName: String): Bitmap? {
-        if (map.containsKey(packageName)) return map[packageName]
+        if (noIcon.contains(packageName)) return null
+        map[packageName]?.let { return it }
         val decoded = withContext(Dispatchers.IO) {
             runCatching {
                 context.packageManager.getApplicationIcon(packageName).toBitmap(SIZE_PX, SIZE_PX)
             }.getOrNull()
         }
-        map[packageName] = decoded
+        if (decoded != null) map[packageName] = decoded
+        else noIcon.add(packageName)
         return decoded
     }
 }
@@ -244,7 +256,7 @@ private fun RestorePickRow(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = item.label.take(1).uppercase(),
+                        text = item.label.ifBlank { "?" }.take(1).uppercase(),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )

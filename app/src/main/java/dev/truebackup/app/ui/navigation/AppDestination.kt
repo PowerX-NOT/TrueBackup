@@ -49,7 +49,7 @@ sealed class AppDestination(
         unselectedIcon = Icons.Outlined.Backup
     )
 
-    /** Full-screen restore processing (DataBackup-style: list → setup → this screen). */
+    /** Full-screen restore processing (list → full-screen progress). */
     data object RestoreProcess : AppDestination(
         route = "restore_process",
         label = "Restore Process",

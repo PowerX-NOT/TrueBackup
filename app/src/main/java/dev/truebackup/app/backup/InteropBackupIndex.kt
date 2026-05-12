@@ -6,7 +6,8 @@ import java.io.Serializable
 
 /**
  * One app folder under [BackupInteropLayout] (has [BackupInteropLayout.FILE_CONFIG]).
- * Mirrors how Android-DataBackup / TrueBackupService discover restore candidates.
+ * Discovers per-app backup folders that contain [BackupInteropLayout.FILE_CONFIG]
+ * (same idea as system TrueBackup metadata discovery).
  */
 data class InteropBackedUpPackage(
     val packageName: String,

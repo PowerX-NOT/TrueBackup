@@ -85,7 +85,7 @@ data class RestorePackageEntry(
 // ── Screen ───────────────────────────────────────────────────────────────────
 
 /**
- * Full-screen restore process (mirrors Android-DataBackup packages restore processing flow).
+ * Full-screen restore progress for selected interop backups.
  */
 @Composable
 fun RestoreProcessScreen(
