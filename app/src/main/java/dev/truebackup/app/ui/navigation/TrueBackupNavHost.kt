@@ -9,7 +9,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -89,14 +92,12 @@ fun TrueBackupNavHost(
         popEnterTransition = screenPopEnterTransition,
         popExitTransition = screenPopExitTransition
     ) {
-        composable(AppDestination.Backup.route) {
+        composable(AppDestination.Backup.route) { backStackEntry ->
             BackupScreen(
                 onStartBackup = { args ->
-                    // Store args on this entry's SavedStateHandle; the
-                    // process screen picks them up from the previous entry.
-                    navController.currentBackStackEntry
-                        ?.savedStateHandle
-                        ?.set("backup_process_args", args)
+                    // Store on this destination's entry so previousBackStackEntry still has it
+                    // when BackupProcess is shown (avoid currentBackStackEntry races).
+                    backStackEntry.savedStateHandle["backup_process_args"] = args
                     navController.navigate(AppDestination.BackupProcess.route)
                 }
             )
@@ -118,8 +119,14 @@ fun TrueBackupNavHost(
                 ?.savedStateHandle
                 ?.get<BackupProcessArgs>("backup_process_args")
 
+            LaunchedEffect(args) {
+                if (args == null) {
+                    navController.popBackStack()
+                }
+            }
+
             if (args == null) {
-                navController.popBackStack()
+                Box(modifier = Modifier.fillMaxSize())
                 return@composable
             }
 

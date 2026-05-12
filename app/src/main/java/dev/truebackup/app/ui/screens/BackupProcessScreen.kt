@@ -53,7 +53,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,8 +68,6 @@ import androidx.compose.ui.unit.dp
 import dev.truebackup.app.backup.RootBackupInteropManager
 import dev.truebackup.app.backup.RootBackupRequest
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 // ── State model ─────────────────────────────────────────────────────────────
@@ -100,7 +97,6 @@ fun BackupProcessScreen(
     onFinished: () -> Unit
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val manager = remember { RootBackupInteropManager(context) }
     val listState = rememberLazyListState()
 
@@ -127,34 +123,31 @@ fun BackupProcessScreen(
             finished = true
             return@LaunchedEffect
         }
-        withContext(Dispatchers.IO) {
-            packages.forEachIndexed { index, (pkg, _) ->
-                withContext(Dispatchers.Main) {
-                    currentIndex = index
-                    entries[index] = entries[index].copy(status = PackageBackupStatus.IN_PROGRESS)
-                }
-                // Scroll so the active item is visible
+        packages.forEachIndexed { index, (pkg, _) ->
+            withContext(Dispatchers.Main) {
+                currentIndex = index
+                entries[index] = entries[index].copy(status = PackageBackupStatus.IN_PROGRESS)
                 listState.animateScrollToItem(index)
-                val result = runCatching {
+            }
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
                     manager.createBackupArchives(
                         RootBackupRequest(packageName = pkg, basePath = basePath)
                     )
                 }
-                withContext(Dispatchers.Main) {
-                    entries[index] = if (result.isSuccess) {
-                        entries[index].copy(status = PackageBackupStatus.SUCCESS)
-                    } else {
-                        entries[index].copy(
-                            status = PackageBackupStatus.FAILED,
-                            errorMessage = result.exceptionOrNull()?.message ?: "Unknown error"
-                        )
-                    }
-                }
             }
             withContext(Dispatchers.Main) {
-                finished = true
+                entries[index] = if (result.isSuccess) {
+                    entries[index].copy(status = PackageBackupStatus.SUCCESS)
+                } else {
+                    entries[index].copy(
+                        status = PackageBackupStatus.FAILED,
+                        errorMessage = result.exceptionOrNull()?.message ?: "Unknown error"
+                    )
+                }
             }
         }
+        finished = true
     }
 
     val successCount = entries.count { it.status == PackageBackupStatus.SUCCESS }
