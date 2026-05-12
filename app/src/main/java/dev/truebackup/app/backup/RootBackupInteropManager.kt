@@ -5,6 +5,8 @@ import android.content.pm.ApplicationInfo
 import android.os.Build
 import android.os.Process
 import android.system.Os
+import android.util.Log
+import dev.truebackup.app.root.PrivilegedOperationResult
 import dev.truebackup.app.root.PrivilegedOperations
 import java.io.File
 import java.util.UUID
@@ -39,6 +41,7 @@ class RootBackupInteropManager(
     fun createBackupArchives(request: RootBackupRequest): RootBackupPlanResult {
         val userId = userIdFromUid(Process.myUid())
         val packageName = request.packageName
+        Log.i(TAG, "createBackupArchives pkg=$packageName userId=$userId myUid=${Process.myUid()} owner=${appOwnerSpec()}")
 
         val packageDir = BackupInteropLayout.packageBackupDir(
             basePath = request.basePath,
@@ -122,6 +125,24 @@ class RootBackupInteropManager(
             media = media
         )
 
+        if (isDirectory(userCePath) && !userCe) {
+            val msg =
+                "Internal (CE) data exists at $userCePath but user.zip failed. Check logcat tag $TAG for mirror/chown/zip lines."
+            Log.e(TAG, msg)
+            throw IllegalStateException(msg)
+        }
+        if (userDePath != null && isDirectory(userDePath) && !userDe) {
+            val msg =
+                "Device-protected (DE) data exists at $userDePath but user_de.zip failed. Check logcat tag $TAG."
+            Log.e(TAG, msg)
+            throw IllegalStateException(msg)
+        }
+
+        Log.i(
+            TAG,
+            "parts pkg=$packageName apk=$apk userCe=$userCe userDe=$userDe ext=$extData obb=$obb media=$media"
+        )
+
         val configFile = configWriter.write(
             packageName = packageName,
             packageDir = packageDir,
@@ -162,7 +183,9 @@ class RootBackupInteropManager(
         destinationZip: File,
         excludes: List<String>
     ): Boolean {
+        val label = destinationZip.name
         if (!isDirectory(physicalPathForTest)) {
+            Log.w(TAG, "[$label] skip: not a directory: $physicalPathForTest")
             return false
         }
         val stageRoot = File(context.cacheDir, "tb_stage").apply { mkdirs() }
@@ -173,6 +196,7 @@ class RootBackupInteropManager(
 
         // Prefer cp -a first (matches manual backup; works when toybox tar --exclude/pipe is flaky).
         var populated = privilegedOperations.mirrorCopyDirectoryContents(physicalPathForTest, stagingPath)
+        logOp("[$label] mirror cp", physicalPathForTest, stagingPath, populated)
         if (!populated.isSuccess) {
             privilegedOperations.removeRecursive(stagingPath)
             staging.mkdirs()
@@ -182,24 +206,41 @@ class RootBackupInteropManager(
                 destDir = stagingPath,
                 excludes = excludes
             )
+            logOp("[$label] tar fallback", parentDir, stagingPath, populated)
         }
         if (!populated.isSuccess) {
             privilegedOperations.removeRecursive(stagingPath)
+            Log.e(TAG, "[$label] stage failed for $physicalPathForTest")
             return false
         }
         if (!chownTreeToApp(stagingPath)) {
             privilegedOperations.removeRecursive(stagingPath)
+            Log.e(TAG, "[$label] chown failed owner=${appOwnerSpec()} path=$stagingPath")
             return false
         }
+        val readableFiles = countFilesUnder(staging)
+        Log.i(TAG, "[$label] files under staging (app-readable)=$readableFiles dir=$stagingPath")
         return try {
             JvmZip.zipDirectory(staging, destinationZip)
-            destinationZip.isFile && destinationZip.canRead()
-        } catch (_: Exception) {
+            val ok = destinationZip.isFile && destinationZip.canRead()
+            Log.i(TAG, "[$label] zip -> ${destinationZip.absolutePath} ok=$ok bytes=${destinationZip.length()}")
+            ok
+        } catch (e: Exception) {
+            Log.e(TAG, "[$label] JvmZip failed", e)
             destinationZip.delete()
             false
         } finally {
             privilegedOperations.removeRecursive(stagingPath)
         }
+    }
+
+    private fun countFilesUnder(dir: File): Int =
+        if (!dir.isDirectory) 0
+        else dir.walkTopDown().filter { it.isFile }.count()
+
+    private fun logOp(tag: String, a: String, b: String, r: PrivilegedOperationResult) {
+        val out = r.output.take(800)
+        Log.i(TAG, "$tag exit=${r.exitCode} ok=${r.isSuccess}\n  cmd=${r.command.take(500)}\n  out=$out")
     }
 
     private fun ensureBackupFolders(packageDir: File) {
@@ -284,7 +325,9 @@ class RootBackupInteropManager(
         val own = appOwnerSpec()
         val cmd =
             "chown -R $own '${escape(path)}' && chmod -R u+rwX '${escape(path)}'"
-        return privilegedOperations.runCustom(cmd).isSuccess
+        val r = privilegedOperations.runCustom(cmd)
+        Log.i(TAG, "chownTreeToApp path=$path owner=$own exit=${r.exitCode} ok=${r.isSuccess} out=${r.output.take(400)}")
+        return r.isSuccess
     }
 
     private fun isDirectory(path: String): Boolean {
@@ -302,6 +345,8 @@ class RootBackupInteropManager(
     }
 
     companion object {
+        private const val TAG = "TrueBackup"
+
         /** Same partition as [android.os.UserHandle.getUserId] for typical Android builds. */
         private const val PER_USER_RANGE = 100_000
 
