@@ -1,5 +1,7 @@
 package dev.truebackup.app.ui.screens
 
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -61,6 +63,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.truebackup.app.R
 import dev.truebackup.app.backup.RootBackupInteropManager
 import dev.truebackup.app.backup.RootBackupRequest
 import kotlinx.coroutines.Dispatchers
@@ -84,7 +87,7 @@ data class PackageBackupEntry(
  *
  * @param packages  Ordered list of (packageName, appLabel) to back up.
  * @param basePath  Root path for the backup archive tree.
- * @param onFinished Called when the user taps "Done" or the back gesture is used after completion.
+ * @param onFinished Called when the user taps "Done", uses the system back action, or after completion.
  */
 @Composable
 fun BackupProcessScreen(
@@ -103,6 +106,17 @@ fun BackupProcessScreen(
 
     var currentIndex by remember { mutableStateOf(-1) }
     var finished by remember { mutableStateOf(false) }
+
+    BackHandler {
+        if (!finished) {
+            Toast.makeText(
+                context.applicationContext,
+                context.getString(R.string.backup_back_in_progress_toast),
+                Toast.LENGTH_LONG
+            ).show()
+        }
+        onFinished()
+    }
 
     // Overall progress 0f..1f
     val overallProgress by animateFloatAsState(

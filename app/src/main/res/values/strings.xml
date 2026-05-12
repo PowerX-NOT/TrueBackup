@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">TrueBackup</string>
+    <string name="backup_back_in_progress_toast">Leaving backup. Remaining apps will not be backed up.</string>
 </resources>
