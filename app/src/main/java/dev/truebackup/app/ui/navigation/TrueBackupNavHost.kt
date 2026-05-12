@@ -19,6 +19,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import dev.truebackup.app.ui.screens.BackupProcessScreen
 import dev.truebackup.app.ui.screens.BackupScreen
+import dev.truebackup.app.ui.screens.ReencryptProcessScreen
 import dev.truebackup.app.ui.screens.RestoreProcessScreen
 import dev.truebackup.app.ui.screens.RestoreScreen
 import dev.truebackup.app.ui.screens.SettingsScreen
@@ -112,7 +113,11 @@ fun TrueBackupNavHost(
             )
         }
         composable(AppDestination.Settings.route) {
-            SettingsScreen()
+            SettingsScreen(
+                onNavigateToReencrypt = {
+                    navController.navigate(AppDestination.ReencryptProcess.route)
+                }
+            )
         }
         composable(
             route = AppDestination.BackupProcess.route,
@@ -173,6 +178,21 @@ fun TrueBackupNavHost(
                 onFinished = {
                     if (!navController.popBackToRestoreFromProcess()) {
                         navController.navigateToMainTab(AppDestination.Restore.route)
+                    }
+                }
+            )
+        }
+        composable(
+            route = AppDestination.ReencryptProcess.route,
+            enterTransition = processEnterTransition,
+            exitTransition = processExitTransition,
+            popEnterTransition = screenPopEnterTransition,
+            popExitTransition = processExitTransition
+        ) {
+            ReencryptProcessScreen(
+                onFinished = {
+                    if (!navController.popBackToSettingsFromReencrypt()) {
+                        navController.navigateToMainTab(AppDestination.Settings.route)
                     }
                 }
             )

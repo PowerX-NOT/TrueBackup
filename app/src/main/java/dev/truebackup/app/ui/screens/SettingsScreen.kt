@@ -9,6 +9,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -26,6 +29,7 @@ import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.FolderOff
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
@@ -34,6 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -57,6 +62,7 @@ import dev.truebackup.app.backup.BackupTbk1Tree
 import dev.truebackup.app.root.RootPreflight
 import dev.truebackup.app.root.RootPreflightResult
 import dev.truebackup.app.settings.AppSettingsRepository
+import dev.truebackup.app.settings.PasswordChangeRekeySession
 import dev.truebackup.app.settings.RegistrationPasswordStore
 import dev.truebackup.app.ui.util.resolvePrimaryStoragePathFromTreeUri
 import kotlinx.coroutines.Dispatchers
@@ -64,14 +70,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val repo = remember(context) { AppSettingsRepository(context) }
     val passwordStore = remember(context) { RegistrationPasswordStore(context) }
     val preflight = remember { RootPreflight() }
     val backupBasePath by repo.backupBasePath.collectAsState(initial = null)
-    val encryptionEnabled by repo.backupEncryptionEnabled.collectAsState(initial = false)
 
     var hasRegisteredPassword by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -84,6 +89,8 @@ fun SettingsScreen() {
     var changeNew by remember { mutableStateOf("") }
     var changeConfirm by remember { mutableStateOf("") }
     var passwordPolicyError by remember { mutableStateOf<String?>(null) }
+    var showRegisterPasswordDialog by remember { mutableStateOf(false) }
+    var showChangePasswordDialog by remember { mutableStateOf(false) }
     var verifyRootAtStartup by remember { mutableStateOf(true) }
     var isCheckingRoot by remember { mutableStateOf(false) }
     var rootResult by remember { mutableStateOf<RootPreflightResult?>(null) }
@@ -186,63 +193,128 @@ fun SettingsScreen() {
                     onCheckedChange = { verifyRootAtStartup = it }
                 )
                 Spacer(modifier = Modifier.height(10.dp))
-                SettingRow(
-                    title = "Encrypt new backups (TBK1)",
-                    checked = encryptionEnabled,
-                    onCheckedChange = { enabled ->
-                        scope.launch {
-                            repo.setBackupEncryptionEnabled(enabled)
-                        }
-                    }
-                )
                 Text(
-                    "Uses the same TBK1 format as system TrueBackup (truebackupd). " +
-                        "Register the same passphrase used on the ROM to open existing encrypted backups; " +
-                        "turn on “Encrypt new backups” only after a password is saved.",
+                    stringResource(R.string.tbk1_password_required_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 6.dp)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
 
-                passwordPolicyError?.let { msg ->
-                    Text(
-                        text = msg,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                }
-
+                Text(
+                    text = if (hasRegisteredPassword) {
+                        stringResource(R.string.password_status_registered)
+                    } else {
+                        stringResource(R.string.password_status_not_registered)
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(10.dp))
                 if (!hasRegisteredPassword) {
-                    Text(
-                        "Register password",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = registerNew,
-                        onValueChange = { registerNew = it; passwordPolicyError = null },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(stringResource(R.string.password_new)) },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = registerConfirm,
-                        onValueChange = { registerConfirm = it; passwordPolicyError = null },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(stringResource(R.string.password_confirm)) },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
                     Button(
                         modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            passwordPolicyError = null
+                            registerNew = ""
+                            registerConfirm = ""
+                            showRegisterPasswordDialog = true
+                        }
+                    ) {
+                        Text(stringResource(R.string.password_register))
+                    }
+                } else {
+                    Button(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            passwordPolicyError = null
+                            changeOld = ""
+                            changeNew = ""
+                            changeConfirm = ""
+                            showChangePasswordDialog = true
+                        }
+                    ) {
+                        Text(stringResource(R.string.password_change))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        scope.launch {
+                            passwordPolicyError = null
+                            showRegisterPasswordDialog = false
+                            showChangePasswordDialog = false
+                            withContext(Dispatchers.IO) {
+                                passwordStore.clear()
+                            }
+                            hasRegisteredPassword = false
+                            registerNew = ""
+                            registerConfirm = ""
+                            changeOld = ""
+                            changeNew = ""
+                            changeConfirm = ""
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.password_cleared),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                ) {
+                    Text("Clear password")
+                }
+            }
+        }
+
+        if (showRegisterPasswordDialog) {
+            AlertDialog(
+                onDismissRequest = {
+                    showRegisterPasswordDialog = false
+                    passwordPolicyError = null
+                    registerNew = ""
+                    registerConfirm = ""
+                },
+                title = { Text(stringResource(R.string.password_dialog_register_title)) },
+                text = {
+                    val scrollState = rememberScrollState()
+                    Column(
+                        modifier = Modifier
+                            .heightIn(max = 420.dp)
+                            .verticalScroll(scrollState)
+                    ) {
+                        passwordPolicyError?.let { msg ->
+                            Text(
+                                text = msg,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
+                        OutlinedTextField(
+                            value = registerNew,
+                            onValueChange = { registerNew = it; passwordPolicyError = null },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text(stringResource(R.string.password_new)) },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = registerConfirm,
+                            onValueChange = { registerConfirm = it; passwordPolicyError = null },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text(stringResource(R.string.password_confirm)) },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(
                         onClick = {
                             scope.launch {
                                 passwordPolicyError = null
@@ -290,6 +362,8 @@ fun SettingsScreen() {
                                         hasRegisteredPassword = true
                                         registerNew = ""
                                         registerConfirm = ""
+                                        passwordPolicyError = null
+                                        showRegisterPasswordDialog = false
                                         Toast.makeText(
                                             context,
                                             context.getString(R.string.password_saved),
@@ -302,45 +376,80 @@ fun SettingsScreen() {
                     ) {
                         Text(stringResource(R.string.password_register))
                     }
-                } else {
-                    Text(
-                        "Change password",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = changeOld,
-                        onValueChange = { changeOld = it; passwordPolicyError = null },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(stringResource(R.string.password_old)) },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = changeNew,
-                        onValueChange = { changeNew = it; passwordPolicyError = null },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(stringResource(R.string.password_new)) },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = changeConfirm,
-                        onValueChange = { changeConfirm = it; passwordPolicyError = null },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(stringResource(R.string.password_confirm)) },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Button(
-                        modifier = Modifier.fillMaxWidth(),
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showRegisterPasswordDialog = false
+                            passwordPolicyError = null
+                            registerNew = ""
+                            registerConfirm = ""
+                        }
+                    ) {
+                        Text(stringResource(android.R.string.cancel))
+                    }
+                }
+            )
+        }
+
+        if (showChangePasswordDialog) {
+            AlertDialog(
+                onDismissRequest = {
+                    showChangePasswordDialog = false
+                    passwordPolicyError = null
+                    changeOld = ""
+                    changeNew = ""
+                    changeConfirm = ""
+                },
+                title = { Text(stringResource(R.string.password_dialog_change_title)) },
+                text = {
+                    val scrollState = rememberScrollState()
+                    Column(
+                        modifier = Modifier
+                            .heightIn(max = 420.dp)
+                            .verticalScroll(scrollState)
+                    ) {
+                        passwordPolicyError?.let { msg ->
+                            Text(
+                                text = msg,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
+                        OutlinedTextField(
+                            value = changeOld,
+                            onValueChange = { changeOld = it; passwordPolicyError = null },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text(stringResource(R.string.password_old)) },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = changeNew,
+                            onValueChange = { changeNew = it; passwordPolicyError = null },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text(stringResource(R.string.password_new)) },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = changeConfirm,
+                            onValueChange = { changeConfirm = it; passwordPolicyError = null },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text(stringResource(R.string.password_confirm)) },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(
                         onClick = {
                             scope.launch {
                                 passwordPolicyError = null
@@ -367,9 +476,7 @@ fun SettingsScreen() {
                                     }
                                     val base = backupBasePath
                                     if (BackupTbk1Tree.hasTbk1Archives(base)) {
-                                        if (!BackupTbk1Tree.rekeyAllTbk1(base!!, changeOld, changeNew, context.cacheDir)) {
-                                            return@withContext "rekey"
-                                        }
+                                        return@withContext "nav_reencrypt"
                                     }
                                     if (!passwordStore.changePlaintext(changeOld, changeNew)) {
                                         return@withContext "change"
@@ -382,11 +489,28 @@ fun SettingsScreen() {
                                         context.getString(R.string.password_wrong_old),
                                         Toast.LENGTH_LONG
                                     ).show()
-                                    "rekey" -> Toast.makeText(
-                                        context,
-                                        context.getString(R.string.password_rekey_failed),
-                                        Toast.LENGTH_LONG
-                                    ).show()
+                                    "nav_reencrypt" -> {
+                                        val base = backupBasePath?.trim()?.trimEnd('/').orEmpty()
+                                        if (base.isBlank()) {
+                                            Toast.makeText(
+                                                context,
+                                                context.getString(R.string.password_rekey_failed),
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        } else {
+                                            PasswordChangeRekeySession.prepare(
+                                                base,
+                                                changeOld,
+                                                changeNew
+                                            )
+                                            changeOld = ""
+                                            changeNew = ""
+                                            changeConfirm = ""
+                                            passwordPolicyError = null
+                                            showChangePasswordDialog = false
+                                            onNavigateToReencrypt()
+                                        }
+                                    }
                                     "change" -> Toast.makeText(
                                         context,
                                         context.getString(R.string.password_save_failed),
@@ -396,6 +520,8 @@ fun SettingsScreen() {
                                         changeOld = ""
                                         changeNew = ""
                                         changeConfirm = ""
+                                        passwordPolicyError = null
+                                        showChangePasswordDialog = false
                                         Toast.makeText(
                                             context,
                                             context.getString(R.string.password_changed),
@@ -408,35 +534,21 @@ fun SettingsScreen() {
                     ) {
                         Text(stringResource(R.string.password_change))
                     }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        scope.launch {
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showChangePasswordDialog = false
                             passwordPolicyError = null
-                            withContext(Dispatchers.IO) {
-                                passwordStore.clear()
-                                repo.setBackupEncryptionEnabled(false)
-                            }
-                            hasRegisteredPassword = false
-                            registerNew = ""
-                            registerConfirm = ""
                             changeOld = ""
                             changeNew = ""
                             changeConfirm = ""
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.password_cleared),
-                                Toast.LENGTH_SHORT
-                            ).show()
                         }
+                    ) {
+                        Text(stringResource(android.R.string.cancel))
                     }
-                ) {
-                    Text("Clear password")
                 }
-            }
+            )
         }
     }
 }

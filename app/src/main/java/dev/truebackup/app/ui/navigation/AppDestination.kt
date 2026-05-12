@@ -57,6 +57,14 @@ sealed class AppDestination(
         unselectedIcon = Icons.Outlined.RestorePage
     )
 
+    /** Re-encrypt TBK1 archives after registration password change (from Settings). */
+    data object ReencryptProcess : AppDestination(
+        route = "reencrypt_process",
+        label = "Re-encrypt",
+        selectedIcon = Icons.Filled.Settings,
+        unselectedIcon = Icons.Outlined.Settings
+    )
+
     companion object {
         val bottomItems = listOf(Backup, Restore, Settings)
     }

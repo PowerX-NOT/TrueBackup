@@ -54,10 +54,14 @@ object BackupTbk1Tree {
         if (backupBasePath.isNullOrBlank()) return true
         val zips = collectTbk1Zips(backupBasePath)
         for (z in zips) {
-            if (!rekeySingleZip(z, oldPassword, newPassword, workDir)) return false
+            if (!rekeySingleTbk1Zip(z, oldPassword, newPassword, workDir)) return false
         }
         return true
     }
+
+    /** Re-encrypt one TBK1 archive in place; returns false on any failure. */
+    fun rekeySingleTbk1Zip(zip: File, oldPassword: String, newPassword: String, workDir: File): Boolean =
+        rekeySingleZip(zip, oldPassword, newPassword, workDir)
 
     private fun rekeySingleZip(zip: File, oldPassword: String, newPassword: String, workDir: File): Boolean {
         val tmpPlain = File.createTempFile("tbk_rekey_plain_", ".zip", workDir)

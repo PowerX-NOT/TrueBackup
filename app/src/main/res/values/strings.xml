@@ -17,4 +17,26 @@
     <string name="password_saved">Password saved.</string>
     <string name="password_changed">Password changed.</string>
     <string name="password_cleared">Password cleared.</string>
+    <string name="password_dialog_register_title">Register password</string>
+    <string name="password_dialog_change_title">Change password</string>
+    <string name="password_status_registered">A registration password is saved.</string>
+    <string name="password_status_not_registered">No registration password yet. Tap Register password to add one.</string>
+    <string name="tbk1_password_required_hint">New backups are always stored in TBK1 format (same as system TrueBackup / truebackupd). Register the same passphrase you use on the ROM so encrypted archives match; backup and restore require a saved password.</string>
+    <string name="password_required_for_backup_restore">Register a password in Settings before backing up or restoring.</string>
+    <string name="password_required_hint_short">Register a password in Settings to use backup and restore.</string>
+    <string name="reencrypt_back_blocked_toast">Re-encryption in progress. Wait until it finishes.</string>
+    <string name="reencrypt_headline_working">Re-encrypting backups…</string>
+    <string name="reencrypt_headline_done">Re-encrypt complete</string>
+    <string name="reencrypt_headline_error">Could not start</string>
+    <string name="reencrypt_session_missing">Something went wrong. Open Change password from Settings again.</string>
+    <string name="reencrypt_no_archives_saved">No TBK1 archives found; your new password was saved.</string>
+    <string name="reencrypt_password_save_failed">Re-encryption finished but saving the new password failed. Do not clear app data; try changing the password again from Settings.</string>
+    <string name="reencrypt_summary_fmt">%1$d of %2$d archives re-encrypted</string>
+    <string name="reencrypt_progress_fmt">%1$d of %2$d archives</string>
+    <string name="reencrypt_overall_progress_label">Overall progress</string>
+    <string name="reencrypt_status_waiting">Waiting…</string>
+    <string name="reencrypt_status_running">Re-encrypting…</string>
+    <string name="reencrypt_status_done">Done</string>
+    <string name="reencrypt_summary_succeeded">Succeeded</string>
+    <string name="reencrypt_summary_failed">Failed</string>
 </resources>

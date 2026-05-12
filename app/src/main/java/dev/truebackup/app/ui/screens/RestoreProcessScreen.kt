@@ -135,6 +135,19 @@ fun RestoreProcessScreen(
             return@LaunchedEffect
         }
         val decryptionPassword = withContext(Dispatchers.IO) { passwordStore.readPlaintext() }
+        if (decryptionPassword.isNullOrBlank()) {
+            val msg = context.getString(R.string.password_required_for_backup_restore)
+            withContext(Dispatchers.Main) {
+                packages.indices.forEach { i ->
+                    entries[i] = entries[i].copy(
+                        status = PackageRestoreStatus.FAILED,
+                        errorMessage = msg
+                    )
+                }
+                finished = true
+            }
+            return@LaunchedEffect
+        }
         packages.forEachIndexed { index, item ->
             withContext(Dispatchers.Main) {
                 currentIndex = index

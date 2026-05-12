@@ -39,3 +39,12 @@ fun NavHostController.popBackToRestoreFromProcess(): Boolean {
         saveState = false
     )
 }
+
+/** Closes [AppDestination.ReencryptProcess] and returns to Settings. */
+fun NavHostController.popBackToSettingsFromReencrypt(): Boolean {
+    return popBackStack(
+        route = AppDestination.Settings.route,
+        inclusive = false,
+        saveState = false
+    )
+}

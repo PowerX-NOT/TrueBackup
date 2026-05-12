@@ -48,6 +48,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,64 +61,49 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.truebackup.app.R
-import dev.truebackup.app.backup.RootBackupInteropManager
-import dev.truebackup.app.backup.RootBackupRequest
+import dev.truebackup.app.backup.BackupTbk1Tree
+import dev.truebackup.app.settings.PasswordChangeRekeySession
 import dev.truebackup.app.settings.RegistrationPasswordStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
 
-// ── State model ─────────────────────────────────────────────────────────────
+private enum class ReencryptRowStatus { QUEUED, IN_PROGRESS, SUCCESS, FAILED }
 
-enum class PackageBackupStatus { QUEUED, IN_PROGRESS, SUCCESS, FAILED }
-
-data class PackageBackupEntry(
-    val packageName: String,
+private data class ReencryptRow(
+    val key: String,
     val label: String,
-    val status: PackageBackupStatus = PackageBackupStatus.QUEUED,
+    val status: ReencryptRowStatus = ReencryptRowStatus.QUEUED,
     val errorMessage: String? = null
 )
 
-// ── Screen ───────────────────────────────────────────────────────────────────
-
 /**
- * Full-screen backup process overlay.
- *
- * @param packages  Ordered list of (packageName, appLabel) to back up.
- * @param basePath  Root path for the backup archive tree.
- * @param onFinished Called when the user taps "Done". After backup completes, system back pops via Navigation (predictive back).
+ * Full-screen TBK1 re-encryption after the user changes the registration password from Settings.
+ * Expects a one-time [PasswordChangeRekeySession] payload (not passed through navigation).
  */
 @Composable
-fun BackupProcessScreen(
-    packages: List<Pair<String, String>>,
-    basePath: String,
-    onFinished: () -> Unit
-) {
+fun ReencryptProcessScreen(onFinished: () -> Unit) {
     val context = LocalContext.current
-    val manager = remember { RootBackupInteropManager(context) }
     val passwordStore = remember(context) { RegistrationPasswordStore(context) }
 
-    val entries = remember {
-        mutableStateListOf(*packages.map { (pkg, label) ->
-            PackageBackupEntry(packageName = pkg, label = label)
-        }.toTypedArray())
-    }
-
-    var currentIndex by remember { mutableStateOf(-1) }
+    val entries = remember { mutableStateListOf<ReencryptRow>() }
+    var currentIndex by remember { mutableIntStateOf(-1) }
     var finished by remember { mutableStateOf(false) }
+    var invalidSession by remember { mutableStateOf(false) }
+    var savePasswordFailed by remember { mutableStateOf(false) }
 
-    // While backup runs: intercept predictive back, collect progress (animation), toast on commit — no pop.
     PredictiveBackHandler(enabled = !finished) { progress ->
         try {
             progress.collect { }
             Toast.makeText(
                 context.applicationContext,
-                context.getString(R.string.backup_back_blocked_toast),
+                context.getString(R.string.reencrypt_back_blocked_toast),
                 Toast.LENGTH_LONG
             ).show()
         } catch (e: CancellationException) {
@@ -125,69 +111,89 @@ fun BackupProcessScreen(
         }
     }
 
-    // Overall progress 0f..1f
     val overallProgress by animateFloatAsState(
-        targetValue = if (packages.isEmpty()) 1f
-        else (currentIndex + 1).coerceAtMost(packages.size).toFloat() / packages.size.toFloat(),
+        targetValue = when {
+            invalidSession -> 1f
+            finished && entries.isEmpty() -> 1f
+            entries.isEmpty() || currentIndex < 0 -> 0f
+            else -> (currentIndex + 1).coerceAtMost(entries.size).toFloat() / entries.size.toFloat()
+        },
         animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing),
-        label = "overallProgress"
+        label = "reencryptOverall"
     )
 
-    // Kick off the backup chain once
     LaunchedEffect(Unit) {
-        if (packages.isEmpty()) {
+        val pending = withContext(Dispatchers.IO) { PasswordChangeRekeySession.take() }
+        if (pending == null) {
+            invalidSession = true
             finished = true
             return@LaunchedEffect
         }
-        val encryptionPassword = withContext(Dispatchers.IO) { passwordStore.readPlaintext() }
-        if (encryptionPassword.isNullOrBlank()) {
-            val msg = context.getString(R.string.password_required_for_backup_restore)
-            withContext(Dispatchers.Main) {
-                packages.indices.forEach { i ->
-                    entries[i] = entries[i].copy(
-                        status = PackageBackupStatus.FAILED,
-                        errorMessage = msg
-                    )
-                }
-                finished = true
+        val base = pending.backupBasePath
+        val oldPw = pending.oldPassword
+        val newPw = pending.newPassword
+        val zips = withContext(Dispatchers.IO) { BackupTbk1Tree.collectTbk1Zips(base) }
+        if (zips.isEmpty()) {
+            val ok = withContext(Dispatchers.IO) {
+                passwordStore.changePlaintext(oldPw, newPw)
             }
+            if (!ok) {
+                savePasswordFailed = true
+            } else {
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.password_changed),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            finished = true
             return@LaunchedEffect
         }
-        packages.forEachIndexed { index, (pkg, _) ->
-            withContext(Dispatchers.Main) {
-                currentIndex = index
-                entries[index] = entries[index].copy(status = PackageBackupStatus.IN_PROGRESS)
+        entries.clear()
+        zips.forEach { f ->
+            entries.add(
+                ReencryptRow(
+                    key = f.absolutePath,
+                    label = f.name,
+                    status = ReencryptRowStatus.QUEUED
+                )
+            )
+        }
+        val workDir = context.cacheDir
+        for (i in zips.indices) {
+            currentIndex = i
+            entries[i] = entries[i].copy(status = ReencryptRowStatus.IN_PROGRESS)
+            val ok = withContext(Dispatchers.IO) {
+                BackupTbk1Tree.rekeySingleTbk1Zip(zips[i], oldPw, newPw, workDir)
             }
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    manager.createBackupArchives(
-                        RootBackupRequest(
-                            packageName = pkg,
-                            basePath = basePath,
-                            encryptArchives = true,
-                            encryptionPassword = encryptionPassword
-                        )
-                    )
-                }
+            if (!ok) {
+                entries[i] = entries[i].copy(
+                    status = ReencryptRowStatus.FAILED,
+                    errorMessage = context.getString(R.string.password_rekey_failed)
+                )
+                finished = true
+                return@LaunchedEffect
             }
-            withContext(Dispatchers.Main) {
-                entries[index] = if (result.isSuccess) {
-                    entries[index].copy(status = PackageBackupStatus.SUCCESS)
-                } else {
-                    entries[index].copy(
-                        status = PackageBackupStatus.FAILED,
-                        errorMessage = result.exceptionOrNull()?.message ?: "Unknown error"
-                    )
-                }
-            }
+            entries[i] = entries[i].copy(status = ReencryptRowStatus.SUCCESS)
+        }
+        val saved = withContext(Dispatchers.IO) {
+            passwordStore.changePlaintext(oldPw, newPw)
+        }
+        if (!saved) {
+            savePasswordFailed = true
+        } else {
+            Toast.makeText(
+                context,
+                context.getString(R.string.password_changed),
+                Toast.LENGTH_SHORT
+            ).show()
         }
         finished = true
     }
 
-    val successCount = entries.count { it.status == PackageBackupStatus.SUCCESS }
-    val failedCount = entries.count { it.status == PackageBackupStatus.FAILED }
+    val successCount = entries.count { it.status == ReencryptRowStatus.SUCCESS }
+    val failedCount = entries.count { it.status == ReencryptRowStatus.FAILED }
 
-    // Gradient background
     val gradientColors = listOf(
         MaterialTheme.colorScheme.surfaceContainerLowest,
         MaterialTheme.colorScheme.surface
@@ -204,52 +210,74 @@ fun BackupProcessScreen(
                 .padding(horizontal = 20.dp, vertical = 24.dp),
             verticalArrangement = Arrangement.Top
         ) {
-
-            // ── Header ──────────────────────────────────────────────────────
             Text(
-                text = if (finished) "Backup complete" else "Backing up…",
+                text = when {
+                    invalidSession -> stringResource(R.string.reencrypt_headline_error)
+                    finished -> stringResource(R.string.reencrypt_headline_done)
+                    else -> stringResource(R.string.reencrypt_headline_working)
+                },
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = if (finished)
-                    "$successCount of ${packages.size} apps backed up"
-                else
-                    "${(currentIndex + 1).coerceAtMost(packages.size)} of ${packages.size} apps",
+                text = when {
+                    invalidSession -> stringResource(R.string.reencrypt_session_missing)
+                    savePasswordFailed -> stringResource(R.string.reencrypt_password_save_failed)
+                    finished && entries.isEmpty() -> stringResource(R.string.reencrypt_no_archives_saved)
+                    finished -> stringResource(R.string.reencrypt_summary_fmt, successCount, entries.size)
+                    entries.isEmpty() -> ""
+                    else -> stringResource(
+                        R.string.reencrypt_progress_fmt,
+                        (currentIndex + 1).coerceAtLeast(1).coerceAtMost(entries.size),
+                        entries.size
+                    )
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.height(20.dp))
 
-            // ── Overall progress bar ─────────────────────────────────────────
-            AnimatedProgressBar(progress = overallProgress, finished = finished)
+            ReencryptProgressBar(
+                progress = overallProgress,
+                finished = finished,
+                errorTint = invalidSession || savePasswordFailed || failedCount > 0
+            )
             Spacer(modifier = Modifier.height(24.dp))
 
-            // ── Per-app list ─────────────────────────────────────────────────
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(
-                    items = entries,
-                    key = { it.packageName },
-                    contentType = { "backup_row" }
-                ) { entry ->
-                    AppBackupRow(entry = entry, isActive = currentIndex < packages.size &&
-                            packages.getOrNull(currentIndex)?.first == entry.packageName)
+            if (entries.isNotEmpty()) {
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(
+                        items = entries,
+                        key = { it.key },
+                        contentType = { "reencrypt_row" }
+                    ) { entry ->
+                        ReencryptRowCard(
+                            entry = entry,
+                            isActive = currentIndex >= 0 &&
+                                currentIndex < entries.size &&
+                                entries.getOrNull(currentIndex)?.key == entry.key &&
+                                entry.status == ReencryptRowStatus.IN_PROGRESS
+                        )
+                    }
                 }
+            } else {
+                Spacer(modifier = Modifier.weight(1f))
             }
 
-            // ── Summary / Done ───────────────────────────────────────────────
             AnimatedVisibility(
                 visible = finished,
                 enter = expandVertically(animationSpec = tween(400)) + fadeIn(tween(400)),
                 exit = shrinkVertically() + fadeOut()
             ) {
                 Column {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    SummaryCard(successCount = successCount, failedCount = failedCount)
+                    if (entries.isNotEmpty() && (successCount > 0 || failedCount > 0)) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        ReencryptSummaryCard(successCount = successCount, failedCount = failedCount)
+                    }
                     Spacer(modifier = Modifier.height(16.dp))
                     Button(
                         onClick = onFinished,
@@ -264,20 +292,20 @@ fun BackupProcessScreen(
     }
 }
 
-// ── Subcomponents ─────────────────────────────────────────────────────────────
-
 @Composable
-private fun AnimatedProgressBar(progress: Float, finished: Boolean) {
-    val color = if (finished) MaterialTheme.colorScheme.tertiary
-    else MaterialTheme.colorScheme.primary
-
+private fun ReencryptProgressBar(progress: Float, finished: Boolean, errorTint: Boolean) {
+    val color = when {
+        errorTint && finished -> MaterialTheme.colorScheme.error
+        finished -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.primary
+    }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = "Overall progress",
+                text = stringResource(R.string.reencrypt_overall_progress_label),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -302,8 +330,8 @@ private fun AnimatedProgressBar(progress: Float, finished: Boolean) {
 }
 
 @Composable
-private fun AppBackupRow(entry: PackageBackupEntry, isActive: Boolean) {
-    val infiniteTransition = rememberInfiniteTransition(label = "spinner_${entry.packageName}")
+private fun ReencryptRowCard(entry: ReencryptRow, isActive: Boolean) {
+    val infiniteTransition = rememberInfiniteTransition(label = "re_${entry.key}")
     val rotation by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
@@ -311,16 +339,14 @@ private fun AppBackupRow(entry: PackageBackupEntry, isActive: Boolean) {
             animation = tween(1000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
-        label = "spinnerRotation"
+        label = "reSpin"
     )
-
     val cardColor = when (entry.status) {
-        PackageBackupStatus.SUCCESS -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
-        PackageBackupStatus.FAILED -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
-        PackageBackupStatus.IN_PROGRESS -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-        PackageBackupStatus.QUEUED -> MaterialTheme.colorScheme.surfaceContainerHigh
+        ReencryptRowStatus.SUCCESS -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+        ReencryptRowStatus.FAILED -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+        ReencryptRowStatus.IN_PROGRESS -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+        ReencryptRowStatus.QUEUED -> MaterialTheme.colorScheme.surfaceContainerHigh
     }
-
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
@@ -333,43 +359,37 @@ private fun AppBackupRow(entry: PackageBackupEntry, isActive: Boolean) {
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Status icon / spinner
-            Box(
-                modifier = Modifier.size(32.dp),
-                contentAlignment = Alignment.Center
-            ) {
+            Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
                 when (entry.status) {
-                    PackageBackupStatus.QUEUED -> Icon(
+                    ReencryptRowStatus.QUEUED -> Icon(
                         imageVector = Icons.Filled.Schedule,
-                        contentDescription = "Queued",
+                        contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(22.dp)
                     )
-                    PackageBackupStatus.IN_PROGRESS -> Icon(
+                    ReencryptRowStatus.IN_PROGRESS -> Icon(
                         imageVector = Icons.Filled.HourglassTop,
-                        contentDescription = "In progress",
+                        contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier
                             .size(22.dp)
                             .rotate(rotation)
                     )
-                    PackageBackupStatus.SUCCESS -> Icon(
+                    ReencryptRowStatus.SUCCESS -> Icon(
                         imageVector = Icons.Filled.CheckCircle,
-                        contentDescription = "Success",
+                        contentDescription = null,
                         tint = MaterialTheme.colorScheme.tertiary,
                         modifier = Modifier.size(22.dp)
                     )
-                    PackageBackupStatus.FAILED -> Icon(
+                    ReencryptRowStatus.FAILED -> Icon(
                         imageVector = Icons.Filled.Error,
-                        contentDescription = "Failed",
+                        contentDescription = null,
                         tint = MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(22.dp)
                     )
                 }
             }
-
             Spacer(modifier = Modifier.width(12.dp))
-
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = entry.label,
@@ -380,24 +400,22 @@ private fun AppBackupRow(entry: PackageBackupEntry, isActive: Boolean) {
                 )
                 AnimatedContent(
                     targetState = entry.status,
-                    transitionSpec = {
-                        fadeIn(tween(200)) togetherWith fadeOut(tween(150))
-                    },
-                    label = "statusText_${entry.packageName}"
+                    transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
+                    label = "reStatus_${entry.key}"
                 ) { status ->
                     Text(
                         text = when (status) {
-                            PackageBackupStatus.QUEUED -> "Waiting…"
-                            PackageBackupStatus.IN_PROGRESS -> "Backing up…"
-                            PackageBackupStatus.SUCCESS -> "Done"
-                            PackageBackupStatus.FAILED -> entry.errorMessage
-                                ?.take(60) ?: "Failed"
+                            ReencryptRowStatus.QUEUED -> stringResource(R.string.reencrypt_status_waiting)
+                            ReencryptRowStatus.IN_PROGRESS -> stringResource(R.string.reencrypt_status_running)
+                            ReencryptRowStatus.SUCCESS -> stringResource(R.string.reencrypt_status_done)
+                            ReencryptRowStatus.FAILED ->
+                                entry.errorMessage?.take(80) ?: stringResource(R.string.password_rekey_failed)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = when (status) {
-                            PackageBackupStatus.SUCCESS -> MaterialTheme.colorScheme.tertiary
-                            PackageBackupStatus.FAILED -> MaterialTheme.colorScheme.error
-                            PackageBackupStatus.IN_PROGRESS -> MaterialTheme.colorScheme.primary
+                            ReencryptRowStatus.SUCCESS -> MaterialTheme.colorScheme.tertiary
+                            ReencryptRowStatus.FAILED -> MaterialTheme.colorScheme.error
+                            ReencryptRowStatus.IN_PROGRESS -> MaterialTheme.colorScheme.primary
                             else -> MaterialTheme.colorScheme.onSurfaceVariant
                         },
                         maxLines = 2,
@@ -405,25 +423,21 @@ private fun AppBackupRow(entry: PackageBackupEntry, isActive: Boolean) {
                     )
                 }
             }
-
-            // Tiny dot indicator for active item
-            if (isActive && entry.status == PackageBackupStatus.IN_PROGRESS) {
-                val pulse by rememberInfiniteTransition(label = "pulse_${entry.packageName}").animateFloat(
+            if (isActive && entry.status == ReencryptRowStatus.IN_PROGRESS) {
+                val pulse by rememberInfiniteTransition(label = "rePulse_${entry.key}").animateFloat(
                     initialValue = 0.4f,
                     targetValue = 1f,
                     animationSpec = infiniteRepeatable(
                         animation = tween(700, easing = FastOutSlowInEasing),
                         repeatMode = RepeatMode.Reverse
                     ),
-                    label = "pulseAlpha"
+                    label = "pulse"
                 )
                 Box(
                     modifier = Modifier
                         .size(8.dp)
                         .clip(CircleShape)
-                        .background(
-                            MaterialTheme.colorScheme.primary.copy(alpha = pulse)
-                        )
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = pulse))
                 )
             }
         }
@@ -431,13 +445,13 @@ private fun AppBackupRow(entry: PackageBackupEntry, isActive: Boolean) {
 }
 
 @Composable
-private fun SummaryCard(successCount: Int, failedCount: Int) {
+private fun ReencryptSummaryCard(successCount: Int, failedCount: Int) {
     val hasFailed = failedCount > 0
-    val cardColor = if (hasFailed)
+    val cardColor = if (hasFailed) {
         MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f)
-    else
+    } else {
         MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f)
-
+    }
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -450,18 +464,18 @@ private fun SummaryCard(successCount: Int, failedCount: Int) {
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            SummaryStatItem(
+            ReencryptSummaryStat(
                 icon = Icons.Filled.CheckCircle,
                 tint = MaterialTheme.colorScheme.tertiary,
                 value = successCount.toString(),
-                label = "Succeeded"
+                label = stringResource(R.string.reencrypt_summary_succeeded)
             )
             if (hasFailed) {
-                SummaryStatItem(
+                ReencryptSummaryStat(
                     icon = Icons.Filled.Error,
                     tint = MaterialTheme.colorScheme.error,
                     value = failedCount.toString(),
-                    label = "Failed"
+                    label = stringResource(R.string.reencrypt_summary_failed)
                 )
             }
         }
@@ -469,7 +483,7 @@ private fun SummaryCard(successCount: Int, failedCount: Int) {
 }
 
 @Composable
-private fun SummaryStatItem(
+private fun ReencryptSummaryStat(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     tint: Color,
     value: String,

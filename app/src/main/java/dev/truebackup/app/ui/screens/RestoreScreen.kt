@@ -1,6 +1,7 @@
 package dev.truebackup.app.ui.screens
 
 import android.graphics.Bitmap
+import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -35,6 +36,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,22 +44,33 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
+import dev.truebackup.app.R
 import dev.truebackup.app.backup.InteropBackedUpPackage
 import dev.truebackup.app.backup.InteropBackupIndex
 import dev.truebackup.app.settings.AppSettingsRepository
+import dev.truebackup.app.settings.RegistrationPasswordStore
 import dev.truebackup.app.ui.navigation.RestoreProcessArgs
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 
 @Composable
 fun RestoreScreen(onStartRestore: (RestoreProcessArgs) -> Unit) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val repo = remember(context) { AppSettingsRepository(context) }
+    val passwordStore = remember(context) { RegistrationPasswordStore(context) }
     val basePath by repo.backupBasePath.collectAsState(initial = null)
+
+    var hasPassword by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        hasPassword = withContext(Dispatchers.IO) { passwordStore.isConfigured() }
+    }
 
     var backedUp by remember { mutableStateOf<List<InteropBackedUpPackage>>(emptyList()) }
     LaunchedEffect(basePath) {
@@ -121,10 +134,21 @@ fun RestoreScreen(onStartRestore: (RestoreProcessArgs) -> Unit) {
                 style = MaterialTheme.typography.bodyMedium
             )
             Button(
-                enabled = selectedBackupPaths.isNotEmpty() && !basePath.isNullOrBlank(),
+                enabled = selectedBackupPaths.isNotEmpty() && !basePath.isNullOrBlank() && hasPassword,
                 onClick = {
-                    val selected = backedUp.filter { selectedBackupPaths.contains(it.packageDir.absolutePath) }
-                    onStartRestore(RestoreProcessArgs(packages = selected))
+                    scope.launch {
+                        val ok = withContext(Dispatchers.IO) { passwordStore.isConfigured() }
+                        if (!ok) {
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.password_required_for_backup_restore),
+                                Toast.LENGTH_LONG
+                            ).show()
+                            return@launch
+                        }
+                        val selected = backedUp.filter { selectedBackupPaths.contains(it.packageDir.absolutePath) }
+                        onStartRestore(RestoreProcessArgs(packages = selected))
+                    }
                 }
             ) {
                 Text("Restore")
@@ -135,6 +159,12 @@ fun RestoreScreen(onStartRestore: (RestoreProcessArgs) -> Unit) {
         if (basePath.isNullOrBlank()) {
             Text(
                 "Choose a backup folder in Settings first.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        } else if (!hasPassword) {
+            Text(
+                stringResource(R.string.password_required_hint_short),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error
             )
