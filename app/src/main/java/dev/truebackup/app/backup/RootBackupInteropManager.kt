@@ -179,6 +179,16 @@ class RootBackupInteropManager(
         staging.mkdirs()
 
         var populated = privilegedOperations.mirrorCopyDirectoryContents(physicalPathForTest, stagingPath)
+        if (populated.isSuccess) {
+            val stripped = privilegedOperations.removeMirroredPackageExcludes(
+                stagingDir = stagingPath,
+                packageDirEntry = dirEntry,
+                excludes = excludes
+            )
+            if (!stripped.isSuccess) {
+                populated = stripped
+            }
+        }
         if (!populated.isSuccess) {
             privilegedOperations.removeRecursive(stagingPath)
             staging.mkdirs()
