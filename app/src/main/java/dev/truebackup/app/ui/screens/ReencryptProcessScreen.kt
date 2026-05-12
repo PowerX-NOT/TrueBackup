@@ -1,5 +1,7 @@
 package dev.truebackup.app.ui.screens
 
+import android.content.Context
+import android.content.pm.PackageManager
 import android.widget.Toast
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
@@ -66,19 +68,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.truebackup.app.R
+import dev.truebackup.app.backup.BackupInteropLayout
 import dev.truebackup.app.backup.BackupTbk1Tree
+import dev.truebackup.app.backup.InteropBackupIndex
 import dev.truebackup.app.settings.PasswordChangeRekeySession
 import dev.truebackup.app.settings.RegistrationPasswordStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
+import java.io.File
 
 private enum class ReencryptRowStatus { QUEUED, IN_PROGRESS, SUCCESS, FAILED }
 
 private data class ReencryptRow(
     val key: String,
-    val label: String,
+    val title: String,
     val status: ReencryptRowStatus = ReencryptRowStatus.QUEUED,
     val errorMessage: String? = null
 )
@@ -149,30 +154,36 @@ fun ReencryptProcessScreen(onFinished: () -> Unit) {
             finished = true
             return@LaunchedEffect
         }
-        entries.clear()
-        zips.forEach { f ->
-            entries.add(
-                ReencryptRow(
-                    key = f.absolutePath,
-                    label = f.name,
-                    status = ReencryptRowStatus.QUEUED
-                )
+        val groups = withContext(Dispatchers.IO) {
+            buildAppRekeyGroups(context, zips, base)
+        }
+        val rows = groups.map { g ->
+            ReencryptRow(
+                key = g.key,
+                title = g.title,
+                status = ReencryptRowStatus.QUEUED
             )
         }
+        withContext(Dispatchers.Main) {
+            entries.clear()
+            entries.addAll(rows)
+        }
         val workDir = context.cacheDir
-        for (i in zips.indices) {
+        for (i in groups.indices) {
             currentIndex = i
             entries[i] = entries[i].copy(status = ReencryptRowStatus.IN_PROGRESS)
-            val ok = withContext(Dispatchers.IO) {
-                BackupTbk1Tree.rekeySingleTbk1Zip(zips[i], oldPw, newPw, workDir)
-            }
-            if (!ok) {
-                entries[i] = entries[i].copy(
-                    status = ReencryptRowStatus.FAILED,
-                    errorMessage = context.getString(R.string.password_rekey_failed)
-                )
-                finished = true
-                return@LaunchedEffect
+            for (zip in groups[i].zips) {
+                val ok = withContext(Dispatchers.IO) {
+                    BackupTbk1Tree.rekeySingleTbk1Zip(zip, oldPw, newPw, workDir)
+                }
+                if (!ok) {
+                    entries[i] = entries[i].copy(
+                        status = ReencryptRowStatus.FAILED,
+                        errorMessage = context.getString(R.string.password_rekey_failed)
+                    )
+                    finished = true
+                    return@LaunchedEffect
+                }
             }
             entries[i] = entries[i].copy(status = ReencryptRowStatus.SUCCESS)
         }
@@ -392,7 +403,7 @@ private fun ReencryptRowCard(entry: ReencryptRow, isActive: Boolean) {
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = entry.label,
+                    text = entry.title,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
@@ -419,7 +430,8 @@ private fun ReencryptRowCard(entry: ReencryptRow, isActive: Boolean) {
                             else -> MaterialTheme.colorScheme.onSurfaceVariant
                         },
                         maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp)
                     )
                 }
             }
@@ -495,4 +507,36 @@ private fun ReencryptSummaryStat(
         Text(text = value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = tint)
         Text(text = label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+}
+
+private data class AppRekeyGroup(
+    val key: String,
+    val title: String,
+    val zips: List<File>
+)
+
+private fun buildAppRekeyGroups(context: Context, zips: List<File>, backupBasePath: String): List<AppRekeyGroup> {
+    val map = linkedMapOf<String, MutableList<File>>()
+    for (z in zips) {
+        val pkgDir = BackupInteropLayout.packageDirContainingZip(z, backupBasePath)
+        val groupKey = pkgDir?.absolutePath ?: z.absolutePath
+        map.getOrPut(groupKey) { mutableListOf() }.add(z)
+    }
+    return map.map { (groupKey, zipList) ->
+        val first = zipList.first()
+        val pkgDir = BackupInteropLayout.packageDirContainingZip(first, backupBasePath)
+        val title = if (pkgDir != null) resolveAppTitle(context, pkgDir) else first.name
+        AppRekeyGroup(key = groupKey, title = title, zips = zipList)
+    }
+}
+
+private fun resolveAppTitle(context: Context, pkgDir: File): String {
+    val packageName = pkgDir.name
+    val fromBackup = InteropBackupIndex.readBackedUpAppLabel(pkgDir)
+    return runCatching {
+        val pm = context.packageManager
+        pm.getApplicationLabel(
+            pm.getApplicationInfo(packageName, PackageManager.GET_META_DATA)
+        ).toString().takeIf { it.isNotBlank() }
+    }.getOrNull() ?: fromBackup
 }

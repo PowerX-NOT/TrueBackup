@@ -30,4 +30,18 @@ object BackupInteropLayout {
     fun extDataZip(packageDir: File): File = File(File(packageDir, DIR_EXT_DATA), ZIP_DATA)
     fun obbZip(packageDir: File): File = File(File(packageDir, DIR_ADDL_DATA), ZIP_OBB)
     fun mediaZip(packageDir: File): File = File(File(packageDir, DIR_ADDL_DATA), ZIP_MEDIA)
+
+    /**
+     * Returns `.../backup/apps/<package>/` for a zip under the interop tree, or null if [zip] is not under [backupBasePath]/backup/apps/.
+     */
+    fun packageDirContainingZip(zip: File, backupBasePath: String): File? {
+        val base = File(backupBasePath.trim().trimEnd('/')).absoluteFile
+        val appsRoot = File(File(base, DIR_BACKUP), DIR_APPS).absoluteFile
+        var child: File = zip.absoluteFile.parentFile ?: return null
+        while (true) {
+            val parent = child.parentFile ?: return null
+            if (parent.absolutePath == appsRoot.absolutePath) return child
+            child = parent
+        }
+    }
 }

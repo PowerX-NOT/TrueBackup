@@ -37,6 +37,14 @@ object InteropBackupIndex {
         return out.sortedWith(compareBy({ it.label.lowercase() }, { it.packageName }))
     }
 
+    /** Label from [BackupInteropLayout.FILE_CONFIG] if readable; otherwise the folder name. */
+    fun readBackedUpAppLabel(packageDir: File): String {
+        val cfg = BackupInteropLayout.configFile(packageDir)
+        if (!cfg.isFile) return packageDir.name
+        val (pkg, label) = readPackageAndLabel(cfg, folderName = packageDir.name)
+        return label.ifBlank { pkg }
+    }
+
     private fun readPackageAndLabel(configFile: File, folderName: String): Pair<String, String> {
         return runCatching {
             val json = JSONObject(configFile.readText())

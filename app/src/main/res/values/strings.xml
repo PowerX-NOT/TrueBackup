@@ -31,8 +31,8 @@
     <string name="reencrypt_session_missing">Something went wrong. Open Change password from Settings again.</string>
     <string name="reencrypt_no_archives_saved">No TBK1 archives found; your new password was saved.</string>
     <string name="reencrypt_password_save_failed">Re-encryption finished but saving the new password failed. Do not clear app data; try changing the password again from Settings.</string>
-    <string name="reencrypt_summary_fmt">%1$d of %2$d archives re-encrypted</string>
-    <string name="reencrypt_progress_fmt">%1$d of %2$d archives</string>
+    <string name="reencrypt_summary_fmt">%1$d of %2$d apps re-encrypted</string>
+    <string name="reencrypt_progress_fmt">%1$d of %2$d apps</string>
     <string name="reencrypt_overall_progress_label">Overall progress</string>
     <string name="reencrypt_status_waiting">Waiting…</string>
     <string name="reencrypt_status_running">Re-encrypting…</string>
