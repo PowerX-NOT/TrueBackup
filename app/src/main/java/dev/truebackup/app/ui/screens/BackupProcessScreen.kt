@@ -87,7 +87,7 @@ data class PackageBackupEntry(
  *
  * @param packages  Ordered list of (packageName, appLabel) to back up.
  * @param basePath  Root path for the backup archive tree.
- * @param onFinished Called when the user taps "Done", uses the system back action, or after completion.
+ * @param onFinished Called when the user taps "Done" or uses the system back action after backup finished.
  */
 @Composable
 fun BackupProcessScreen(
@@ -108,14 +108,15 @@ fun BackupProcessScreen(
     var finished by remember { mutableStateOf(false) }
 
     BackHandler {
-        if (!finished) {
+        if (finished) {
+            onFinished()
+        } else {
             Toast.makeText(
                 context.applicationContext,
                 context.getString(R.string.backup_back_in_progress_toast),
                 Toast.LENGTH_LONG
             ).show()
         }
-        onFinished()
     }
 
     // Overall progress 0f..1f
