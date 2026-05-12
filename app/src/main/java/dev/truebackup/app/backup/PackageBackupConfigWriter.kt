@@ -1,7 +1,10 @@
 package dev.truebackup.app.backup
 
 import android.content.Context
+import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
+import android.content.pm.PermissionInfo
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
@@ -14,6 +17,11 @@ data class BackupPartFlags(
     val media: Boolean
 )
 
+/**
+ * Writes [BackupInteropLayout.FILE_CONFIG] matching
+ * [com.android.server.TrueBackupService] `writeConfig` JSON shape (version 2, backupConfig,
+ * dataStates, dataStats, security).
+ */
 class PackageBackupConfigWriter(
     private val context: Context
 ) {
@@ -25,13 +33,12 @@ class PackageBackupConfigWriter(
         val config = BackupInteropLayout.configFile(packageDir)
         val now = System.currentTimeMillis()
 
+        val pm = context.packageManager
         val packageInfo = runCatching {
-            context.packageManager.getPackageInfo(packageName, PackageManager.GET_PERMISSIONS)
+            pm.getPackageInfo(packageName, PackageManager.GET_PERMISSIONS)
         }.getOrNull()
         val appInfo = packageInfo?.applicationInfo
-        val appLabel = appInfo?.let {
-            context.packageManager.getApplicationLabel(it).toString()
-        }
+        val appLabel = appInfo?.let { pm.getApplicationLabel(it)?.toString() }
 
         val root = JSONObject()
             .put("version", 2)
@@ -44,7 +51,7 @@ class PackageBackupConfigWriter(
             .put("media", partFlags.media)
 
         val pkgInfo = JSONObject()
-            .put("label", appLabel)
+        pkgInfo.put("label", appLabel ?: JSONObject.NULL)
         if (packageInfo != null) {
             pkgInfo
                 .put("versionName", packageInfo.versionName)
@@ -87,6 +94,16 @@ class PackageBackupConfigWriter(
             .put("mediaBytes", fileSizeIfExists(BackupInteropLayout.mediaZip(packageDir)))
         root.put("dataStats", dataStats)
 
+        val security = JSONObject()
+        if (appInfo != null) {
+            security.put("uid", appInfo.uid)
+        }
+        security.put("ssaid", JSONObject.NULL)
+        security.put("keystore", "unknown")
+        security.put("appops", buildAppOpsJson(packageName, appInfo?.uid ?: -1))
+        security.put("permissions", buildPermissionsJson(pm, packageInfo))
+        root.put("security", security)
+
         config.parentFile?.mkdirs()
         config.writeText(root.toString(2))
         return config
@@ -94,5 +111,48 @@ class PackageBackupConfigWriter(
 
     private fun fileSizeIfExists(file: File): Long {
         return if (file.exists() && file.isFile) file.length() else 0L
+    }
+
+    private fun buildPermissionsJson(pm: PackageManager, pi: PackageInfo?): JSONArray {
+        val perms = JSONArray()
+        if (pi?.requestedPermissions == null) return perms
+        val names = pi.requestedPermissions ?: return perms
+        val flagsArr = pi.requestedPermissionsFlags
+        for (i in names.indices) {
+            val name = names[i] ?: continue
+            val permInfo = try {
+                pm.getPermissionInfo(name, 0)
+            } catch (_: PackageManager.NameNotFoundException) {
+                continue
+            }
+            if (!isRuntimeDangerousPermission(permInfo)) {
+                continue
+            }
+            var granted = false
+            if (flagsArr != null && i < flagsArr.size) {
+                granted = (flagsArr[i] and PackageInfo.REQUESTED_PERMISSION_GRANTED) != 0
+            }
+            perms.put(
+                JSONObject()
+                    .put("name", name)
+                    .put("granted", granted)
+            )
+        }
+        return perms
+    }
+
+    /**
+     * TrueBackupService fills this via [AppOpsManager.getOpsForPackage], which third-party apps
+     * cannot use for arbitrary UIDs. Shape matches restore (`op` + `mode`); empty means skip replay.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    private fun buildAppOpsJson(packageName: String, uid: Int): JSONArray {
+        return JSONArray()
+    }
+
+    /** Same filter as TrueBackupService [PermissionInfo.isRuntime] (dangerous / runtime-grantable). */
+    private fun isRuntimeDangerousPermission(permInfo: PermissionInfo): Boolean {
+        return (permInfo.protectionLevel and PermissionInfo.PROTECTION_MASK_BASE) ==
+            PermissionInfo.PROTECTION_DANGEROUS
     }
 }
