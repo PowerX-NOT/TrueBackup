@@ -1,5 +1,7 @@
 package dev.truebackup.app.ui.screens
 
+import android.widget.Toast
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -61,9 +63,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.truebackup.app.R
 import dev.truebackup.app.backup.RootBackupInteropManager
 import dev.truebackup.app.backup.RootBackupRequest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
 
 // ── State model ─────────────────────────────────────────────────────────────
@@ -84,7 +89,7 @@ data class PackageBackupEntry(
  *
  * @param packages  Ordered list of (packageName, appLabel) to back up.
  * @param basePath  Root path for the backup archive tree.
- * @param onFinished Called when the user taps "Done". System back pops this destination via Navigation Compose (predictive back).
+ * @param onFinished Called when the user taps "Done". After backup completes, system back pops via Navigation (predictive back).
  */
 @Composable
 fun BackupProcessScreen(
@@ -103,6 +108,20 @@ fun BackupProcessScreen(
 
     var currentIndex by remember { mutableStateOf(-1) }
     var finished by remember { mutableStateOf(false) }
+
+    // While backup runs: intercept predictive back, collect progress (animation), toast on commit — no pop.
+    PredictiveBackHandler(enabled = !finished) { progress ->
+        try {
+            progress.collect { }
+            Toast.makeText(
+                context.applicationContext,
+                context.getString(R.string.backup_back_blocked_toast),
+                Toast.LENGTH_LONG
+            ).show()
+        } catch (e: CancellationException) {
+            throw e
+        }
+    }
 
     // Overall progress 0f..1f
     val overallProgress by animateFloatAsState(

@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">TrueBackup</string>
+    <string name="backup_back_blocked_toast">Backup in progress. Wait until it finishes.</string>
 </resources>
