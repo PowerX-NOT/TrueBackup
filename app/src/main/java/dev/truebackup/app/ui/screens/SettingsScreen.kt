@@ -192,12 +192,23 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
                     checked = verifyRootAtStartup,
                     onCheckedChange = { verifyRootAtStartup = it }
                 )
-                Spacer(modifier = Modifier.height(10.dp))
+            }
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // ── Security (registration password / TBK1) ───────────────────────────
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    "Security",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     stringResource(R.string.tbk1_password_required_hint),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 6.dp)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(12.dp))
 
