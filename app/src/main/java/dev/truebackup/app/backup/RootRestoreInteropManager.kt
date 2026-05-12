@@ -66,6 +66,29 @@ class RootRestoreInteropManager(
             val gid = statGidOrUid("/data/media/$backupUserId/Android/media", uid)
             restoreZipTree(BackupInteropLayout.mediaZip(packageDir), mediaDest, uid, gid, chmodOctal = "770")
         }
+        restoreRuntimePermissionsFromConfig(json, packageName, backupUserId)
+    }
+
+    /**
+     * Replays dangerous/runtime grants stored under `security.permissions` (same shape as backup
+     * [PackageBackupConfigWriter]). Uses root `pm grant`; skips entries that fail (e.g. removed from manifest).
+     */
+    private fun restoreRuntimePermissionsFromConfig(
+        json: JSONObject,
+        packageName: String,
+        backupUserId: Int
+    ) {
+        val perms = json.optJSONObject("security")?.optJSONArray("permissions") ?: return
+        val escPkg = escape(packageName)
+        for (i in 0 until perms.length()) {
+            val entry = perms.optJSONObject(i) ?: continue
+            if (!entry.optBoolean("granted", false)) continue
+            val perm = entry.optString("name", "").trim()
+            if (perm.isEmpty()) continue
+            val escPerm = escape(perm)
+            val cmd = "pm grant --user $backupUserId '$escPkg' '$escPerm'"
+            privilegedOperations.runCustom(cmd)
+        }
     }
 
     private fun isPackageInstalled(pm: PackageManager, packageName: String): Boolean {
