@@ -15,3 +15,16 @@ fun NavHostController.navigateToMainTab(route: String) {
         }
     }
 }
+
+/**
+ * Closes [AppDestination.BackupProcess] and returns to the Backup tab (the screen that
+ * was underneath). Prefer this over [navigateToMainTab] for "Done" so the back stack
+ * actually pops instead of re-navigating to start.
+ */
+fun NavHostController.popBackToBackupFromProcess(): Boolean {
+    return popBackStack(
+        route = AppDestination.Backup.route,
+        inclusive = false,
+        saveState = false
+    )
+}

@@ -121,7 +121,7 @@ fun TrueBackupNavHost(
 
             LaunchedEffect(args) {
                 if (args == null) {
-                    navController.navigateToMainTab(AppDestination.Backup.route)
+                    navController.popBackToBackupFromProcess()
                 }
             }
 
@@ -134,7 +134,9 @@ fun TrueBackupNavHost(
                 packages = args.packages,
                 basePath = args.basePath,
                 onFinished = {
-                    navController.navigateToMainTab(AppDestination.Backup.route)
+                    if (!navController.popBackToBackupFromProcess()) {
+                        navController.navigateToMainTab(AppDestination.Backup.route)
+                    }
                 }
             )
         }
