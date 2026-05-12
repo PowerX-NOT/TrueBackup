@@ -1,5 +1,8 @@
 package dev.truebackup.app.ui.app
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -21,30 +24,39 @@ fun TrueBackupApp() {
     val currentRoute = backStack?.destination?.route
     val items = AppDestination.bottomItems
 
+    // Hide bottom bar on full-screen process screens
+    val showBottomBar = currentRoute != AppDestination.BackupProcess.route
+
     Scaffold(
         bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                items.forEach { destination ->
-                    NavigationBarItem(
-                        selected = currentRoute == destination.route,
-                        onClick = {
-                            navController.navigate(destination.route) {
-                                launchSingleTop = true
-                                restoreState = true
-                                popUpTo(navController.graph.startDestinationId) {
-                                    saveState = true
+            AnimatedVisibility(
+                visible = showBottomBar,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                    items.forEach { destination ->
+                        NavigationBarItem(
+                            selected = currentRoute == destination.route,
+                            onClick = {
+                                navController.navigate(destination.route) {
+                                    launchSingleTop = true
+                                    restoreState = true
+                                    popUpTo(navController.graph.startDestinationId) {
+                                        saveState = true
+                                    }
                                 }
-                            }
-                        },
-                        icon = {
-                            val isSelected = currentRoute == destination.route
-                            Icon(
-                                imageVector = if (isSelected) destination.selectedIcon else destination.unselectedIcon,
-                                contentDescription = destination.label
-                            )
-                        },
-                        label = { Text(destination.label) }
-                    )
+                            },
+                            icon = {
+                                val isSelected = currentRoute == destination.route
+                                Icon(
+                                    imageVector = if (isSelected) destination.selectedIcon else destination.unselectedIcon,
+                                    contentDescription = destination.label
+                                )
+                            },
+                            label = { Text(destination.label) }
+                        )
+                    }
                 }
             }
         }

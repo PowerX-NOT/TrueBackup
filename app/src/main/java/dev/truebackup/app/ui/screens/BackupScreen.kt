@@ -1,7 +1,8 @@
 package dev.truebackup.app.ui.screens
 
-import android.content.pm.PackageManager
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +19,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
@@ -25,40 +29,28 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.foundation.Image
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalContext
 import androidx.core.graphics.drawable.toBitmap
-import dev.truebackup.app.backup.RootBackupInteropManager
-import dev.truebackup.app.backup.RootBackupRequest
 import dev.truebackup.app.settings.AppSettingsRepository
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import dev.truebackup.app.ui.navigation.BackupProcessArgs
 
 @Composable
-fun BackupScreen() {
+fun BackupScreen(onStartBackup: (BackupProcessArgs) -> Unit) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val manager = remember { RootBackupInteropManager(context) }
     val installedApps = remember(context) { loadInstalledApps(context) }
     val repo = remember(context) { AppSettingsRepository(context) }
     val basePath by repo.backupBasePath.collectAsState(initial = null)
@@ -67,8 +59,7 @@ fun BackupScreen() {
     var selectedPackages by remember { mutableStateOf(setOf<String>()) }
     var showSystemApps by remember { mutableStateOf(false) }
     var menuExpanded by remember { mutableStateOf(false) }
-    var busy by remember { mutableStateOf(false) }
-    var output by remember { mutableStateOf<String?>(null) }
+
     val filteredApps = remember(installedApps, searchQuery, showSystemApps) {
         val baseList = if (showSystemApps) installedApps else installedApps.filter { !it.isSystem }
         if (searchQuery.isBlank()) {
@@ -92,7 +83,11 @@ fun BackupScreen() {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Back up apps", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text(
+                "Back up apps",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold
+            )
             Box {
                 IconButton(onClick = { menuExpanded = true }) {
                     Icon(imageVector = Icons.Filled.MoreVert, contentDescription = "Menu")
@@ -119,6 +114,7 @@ fun BackupScreen() {
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(modifier = Modifier.height(10.dp))
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -129,47 +125,18 @@ fun BackupScreen() {
                 style = MaterialTheme.typography.bodyMedium
             )
             Button(
-                enabled = !busy && selectedPackages.isNotEmpty() && !basePath.isNullOrBlank(),
+                enabled = selectedPackages.isNotEmpty() && !basePath.isNullOrBlank(),
                 onClick = {
-                    val target = basePath
-                    if (busy) return@Button
-                    if (selectedPackages.isEmpty() || target.isNullOrBlank()) {
-                        output = "Select at least one app and set backup folder in Settings."
-                        return@Button
+                    val target = basePath ?: return@Button
+                    // Build an ordered list of (packageName, label) to pass to the process screen
+                    val packageList = selectedPackages.map { pkg ->
+                        val label = installedApps.find { it.packageName == pkg }?.label ?: pkg
+                        pkg to label
                     }
-                    busy = true
-                    output = null
-                    scope.launch {
-                        val result = withContext(Dispatchers.IO) {
-                            val success = mutableListOf<String>()
-                            val failed = mutableListOf<String>()
-                            selectedPackages.forEach { pkg ->
-                                runCatching {
-                                    manager.createBackupArchives(
-                                        RootBackupRequest(packageName = pkg, basePath = target)
-                                    )
-                                }.onSuccess {
-                                    success += pkg
-                                }.onFailure {
-                                    failed += "$pkg (${it.message ?: "error"})"
-                                }
-                            }
-                            success to failed
-                        }
-                        busy = false
-                        output = buildString {
-                            append("Backup complete.\n")
-                            append("Success: ${result.first.size}\n")
-                            append("Failed: ${result.second.size}")
-                            if (result.second.isNotEmpty()) {
-                                append("\n")
-                                append(result.second.joinToString(separator = "\n"))
-                            }
-                        }
-                    }
+                    onStartBackup(BackupProcessArgs(packages = packageList, basePath = target))
                 }
             ) {
-                Text(if (busy) "Backing up..." else "Back up")
+                Text("Back up")
             }
         }
 
@@ -186,8 +153,10 @@ fun BackupScreen() {
                 items(filteredApps, key = { it.packageName }) { app ->
                     val checked = selectedPackages.contains(app.packageName)
                     val appIcon = remember(app.packageName) {
-                        runCatching { context.packageManager.getApplicationIcon(app.packageName).toBitmap(96, 96) }
-                            .getOrNull()
+                        runCatching {
+                            context.packageManager.getApplicationIcon(app.packageName)
+                                .toBitmap(96, 96)
+                        }.getOrNull()
                     }
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Row(
@@ -223,7 +192,10 @@ fun BackupScreen() {
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(app.label, style = MaterialTheme.typography.titleMedium)
-                                Text(app.packageName, style = MaterialTheme.typography.bodySmall)
+                                Text(
+                                    app.packageName,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
                             }
                             Checkbox(
                                 checked = checked,
@@ -240,24 +212,10 @@ fun BackupScreen() {
                 }
             }
         }
-        Spacer(modifier = Modifier.height(10.dp))
-        if (busy) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-
-        if (!output.isNullOrBlank()) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = output.orEmpty(),
-                    modifier = Modifier.padding(16.dp),
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-        }
     }
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 private data class InstalledApp(
     val label: String,
