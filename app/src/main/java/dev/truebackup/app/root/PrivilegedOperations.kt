@@ -36,10 +36,8 @@ class PrivilegedOperations(
     }
 
     /**
-     * Same idea as Android-DataBackup [Tar.compress]: stream-copy one directory entry from [parentDir]
-     * (e.g. `/data/user/0`) named [packageDirEntry] into [destDir] with tar --exclude patterns relative to
-     * that archive member (e.g. `com.app/cache`). Extract strips the top directory so [destDir] matches
-     * [mirrorCopyDirectoryContents] (package files at dest root). Uses system `tar` (no zip binary).
+     * Stream-copy [packageDirEntry] from under [parentDir] into [destDir] with tar --exclude (before extract).
+     * Extract uses --strip-components=1 so [destDir] matches [mirrorCopyDirectoryContents] layout for zipping.
      */
     fun tarCopyPackageFiltered(
         parentDir: String,
@@ -57,45 +55,6 @@ class PrivilegedOperations(
         val command =
             "mkdir -p '$d' && tar -cf - $exClause -C '$p' '$pkg' | tar -xf - --strip-components=1 -C '$d' && chmod -R a+rX '$d'"
         return execute(PrivilegedOperationType.TAR_COPY, command)
-    }
-
-    /**
-     * After [mirrorCopyDirectoryContents], paths under [stagingDir] are the package root (no package prefix).
-     * [excludes] use tar-style names like `com.pkg/cache`; this removes the matching subtree under staging.
-     */
-    fun removeMirroredPackageExcludes(
-        stagingDir: String,
-        packageDirEntry: String,
-        excludes: List<String>
-    ): PrivilegedOperationResult {
-        val d = escapeSingleQuotes(stagingDir)
-        val prefix = "$packageDirEntry/"
-        val segments = excludes.mapNotNull { pat ->
-            if (!pat.startsWith(prefix)) return@mapNotNull null
-            val rel = pat.removePrefix(prefix)
-            rel.takeIf { it.isNotEmpty() }
-        }.distinct()
-        if (segments.isEmpty()) {
-            return PrivilegedOperationResult(PrivilegedOperationType.CUSTOM, "true", 0, "")
-        }
-        val cmds = buildList {
-            for (rel in segments) {
-                when {
-                    '*' in rel || '?' in rel -> {
-                        if (!rel.matches(Regex("""^[A-Za-z0-9_.*?-]+$"""))) continue
-                        add("cd '$d' && for f in $rel; do [ -e \"\$f\" ] && rm -rf \"\$f\"; done")
-                    }
-                    else -> {
-                        val r = escapeSingleQuotes(rel)
-                        add("rm -rf '$d'/'$r'")
-                    }
-                }
-            }
-        }
-        if (cmds.isEmpty()) {
-            return PrivilegedOperationResult(PrivilegedOperationType.CUSTOM, "true", 0, "")
-        }
-        return runCustom(cmds.joinToString(" && "))
     }
 
     fun removeRecursive(path: String): PrivilegedOperationResult {
