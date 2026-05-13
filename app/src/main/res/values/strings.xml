@@ -39,4 +39,10 @@
     <string name="reencrypt_status_done">Done</string>
     <string name="reencrypt_summary_succeeded">Succeeded</string>
     <string name="reencrypt_summary_failed">Failed</string>
+    <string name="root_status_section_title">Root status</string>
+    <string name="root_status_checking">Checking root access…</string>
+    <string name="root_status_ready_title">Root available</string>
+    <string name="root_status_ready_caption">This device can run privileged backup and restore commands.</string>
+    <string name="root_status_unavailable_title">Root not available</string>
+    <string name="root_status_check_again">Check again</string>
 </resources>

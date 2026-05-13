@@ -25,6 +25,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.FolderOff
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -32,6 +35,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -90,8 +94,13 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
     var passwordPolicyError by remember { mutableStateOf<String?>(null) }
     var showRegisterPasswordDialog by remember { mutableStateOf(false) }
     var showChangePasswordDialog by remember { mutableStateOf(false) }
-    var isCheckingRoot by remember { mutableStateOf(false) }
+    var isCheckingRoot by remember { mutableStateOf(true) }
     var rootResult by remember { mutableStateOf<RootPreflightResult?>(null) }
+
+    LaunchedEffect(Unit) {
+        rootResult = withContext(Dispatchers.IO) { preflight.verify() }
+        isCheckingRoot = false
+    }
 
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -222,56 +231,20 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
         }
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ── Root status card ─────────────────────────────────────────────────
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Root status", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Spacer(modifier = Modifier.height(8.dp))
-
-                AnimatedVisibility(
-                    visible = isCheckingRoot,
-                    enter = expandVertically(tween(250)) + fadeIn(tween(250)),
-                    exit = shrinkVertically(tween(200)) + fadeOut(tween(150))
-                ) {
-                    Column {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-                }
-
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        if (isCheckingRoot) return@Button
+        // ── Root status (auto-checked) ─────────────────────────────────────────
+        RootSettingsStatusCard(
+            isChecking = isCheckingRoot,
+            result = rootResult,
+            onRecheck = {
+                if (!isCheckingRoot) {
+                    scope.launch {
                         isCheckingRoot = true
-                        rootResult = null
-                        scope.launch {
-                            rootResult = withContext(Dispatchers.IO) { preflight.verify() }
-                            isCheckingRoot = false
-                        }
-                    }
-                ) {
-                    Text(if (isCheckingRoot) "Checking..." else "Run root preflight")
-                }
-
-                AnimatedVisibility(
-                    visible = rootResult != null,
-                    enter = expandVertically(tween(300)) + fadeIn(tween(300)),
-                    exit = shrinkVertically(tween(200)) + fadeOut(tween(150))
-                ) {
-                    rootResult?.let { result ->
-                        Column {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Text(result.message, style = MaterialTheme.typography.bodyMedium)
-                            if (result.output.isNotBlank()) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text("Output: ${result.output}", style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
+                        rootResult = withContext(Dispatchers.IO) { preflight.verify() }
+                        isCheckingRoot = false
                     }
                 }
             }
-        }
+        )
 
         if (showRegisterPasswordDialog) {
             AlertDialog(
@@ -554,6 +527,117 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
                     }
                 }
             )
+        }
+    }
+}
+
+@Composable
+private fun RootSettingsStatusCard(
+    isChecking: Boolean,
+    result: RootPreflightResult?,
+    onRecheck: () -> Unit
+) {
+    val scheme = MaterialTheme.colorScheme
+    val container = when {
+        isChecking -> scheme.surfaceContainerHigh
+        result?.isRootAvailable == true -> scheme.primaryContainer.copy(alpha = 0.42f)
+        result != null -> scheme.errorContainer.copy(alpha = 0.38f)
+        else -> scheme.surfaceContainerHigh
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = container),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.root_status_section_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (!isChecking) {
+                    TextButton(onClick = onRecheck) {
+                        Icon(
+                            imageVector = Icons.Filled.Refresh,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(stringResource(R.string.root_status_check_again))
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            AnimatedVisibility(
+                visible = isChecking,
+                enter = expandVertically(tween(220)) + fadeIn(tween(220)),
+                exit = shrinkVertically(tween(180)) + fadeOut(tween(150))
+            ) {
+                Column {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = stringResource(R.string.root_status_checking),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = scheme.onSurfaceVariant
+                    )
+                }
+            }
+            AnimatedVisibility(
+                visible = !isChecking && result != null,
+                enter = expandVertically(tween(260)) + fadeIn(tween(260)),
+                exit = shrinkVertically(tween(180)) + fadeOut(tween(150))
+            ) {
+                result?.let { r ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = if (r.isRootAvailable) Icons.Filled.CheckCircle else Icons.Filled.Error,
+                            contentDescription = null,
+                            tint = if (r.isRootAvailable) scheme.primary else scheme.error,
+                            modifier = Modifier.size(44.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (r.isRootAvailable) {
+                                    stringResource(R.string.root_status_ready_title)
+                                } else {
+                                    stringResource(R.string.root_status_unavailable_title)
+                                },
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = scheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = if (r.isRootAvailable) {
+                                    stringResource(R.string.root_status_ready_caption)
+                                } else {
+                                    r.message
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = scheme.onSurfaceVariant,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
