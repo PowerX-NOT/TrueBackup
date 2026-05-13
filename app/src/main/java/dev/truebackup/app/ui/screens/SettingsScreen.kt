@@ -124,6 +124,29 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
         Text("Runtime behavior and backup preferences.", style = MaterialTheme.typography.bodyMedium)
         Spacer(modifier = Modifier.height(16.dp))
 
+        // ── Backup destination card ───────────────────────────────────────────
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    "Backup destination",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                FolderPathDisplay(path = backupBasePath)
+
+                Spacer(modifier = Modifier.height(10.dp))
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { folderPicker.launch(null) }
+                ) {
+                    Text(if (backupBasePath.isNullOrBlank()) "Choose backup folder" else "Change folder")
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+
         // ── Security (registration password / TBK1) ───────────────────────────
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -150,10 +173,29 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(10.dp))
+                val backupFolderPath = backupBasePath?.trim().orEmpty()
+                val backupPathReady = backupFolderPath.isNotEmpty()
                 if (!hasRegisteredPassword) {
+                    if (!backupPathReady) {
+                        Text(
+                            text = stringResource(R.string.password_register_requires_backup_folder),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                    }
                     Button(
                         modifier = Modifier.fillMaxWidth(),
+                        enabled = backupPathReady,
                         onClick = {
+                            if (!backupPathReady) {
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.password_register_requires_backup_folder),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                return@Button
+                            }
                             passwordPolicyError = null
                             registerNew = ""
                             registerConfirm = ""
@@ -203,29 +245,6 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
                     }
                 ) {
                     Text("Clear password")
-                }
-            }
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // ── Backup destination card ───────────────────────────────────────────
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    "Backup destination",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                FolderPathDisplay(path = backupBasePath)
-
-                Spacer(modifier = Modifier.height(10.dp))
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = { folderPicker.launch(null) }
-                ) {
-                    Text(if (backupBasePath.isNullOrBlank()) "Choose backup folder" else "Change folder")
                 }
             }
         }
@@ -296,6 +315,15 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
                         onClick = {
                             scope.launch {
                                 passwordPolicyError = null
+                                val baseTrimmed = backupBasePath?.trim()?.takeIf { it.isNotEmpty() }
+                                if (baseTrimmed == null) {
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(R.string.password_register_requires_backup_folder),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                    return@launch
+                                }
                                 if (registerNew.isBlank()) {
                                     Toast.makeText(
                                         context,
@@ -313,7 +341,7 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
                                     return@launch
                                 }
                                 val result = withContext(Dispatchers.IO) {
-                                    val base = backupBasePath
+                                    val base = baseTrimmed
                                     if (BackupTbk1Tree.hasTbk1Archives(base)) {
                                         if (!BackupTbk1Tree.canDecryptAnyTbk1(base, registerNew, context.cacheDir)) {
                                             return@withContext "mismatch"
