@@ -12,7 +12,6 @@ object BackupInteropLayout {
     const val DIR_EXT_DATA = "ext_data"
     const val DIR_ADDL_DATA = "addl_data"
 
-    /** New backups: plain tar (no encryption) or OpenSSL-encrypted tar. */
     const val TAR_APK_ENC = "apk.tar.enc"
     const val TAR_APK = "apk.tar"
     const val TAR_USER_ENC = "user.tar.enc"
@@ -26,21 +25,12 @@ object BackupInteropLayout {
     const val TAR_MEDIA_ENC = "media.tar.enc"
     const val TAR_MEDIA = "media.tar"
 
-    /** Legacy ROM / older app interop (TBK1 or plain zip). */
-    const val ZIP_APK = "apk.zip"
-    const val ZIP_USER = "user.zip"
-    const val ZIP_USER_DE = "user_de.zip"
-    const val ZIP_DATA = "data.zip"
-    const val ZIP_OBB = "obb.zip"
-    const val ZIP_MEDIA = "media.zip"
-
     fun packageBackupDir(basePath: String, packageName: String): File {
         return File(File(File(basePath, DIR_BACKUP), DIR_APPS), packageName)
     }
 
     fun configFile(packageDir: File): File = File(packageDir, FILE_CONFIG)
 
-    /** Final path when writing a new backup ([encrypted] uses OpenSSL `enc` on a tarball). */
     fun apkPartForWrite(packageDir: File, encrypted: Boolean): File =
         File(File(packageDir, DIR_APK), if (encrypted) TAR_APK_ENC else TAR_APK)
 
@@ -59,46 +49,40 @@ object BackupInteropLayout {
     fun mediaPartForWrite(packageDir: File, encrypted: Boolean): File =
         File(File(packageDir, DIR_ADDL_DATA), if (encrypted) TAR_MEDIA_ENC else TAR_MEDIA)
 
-    /** Prefer new `.tar.enc`, then legacy `.zip`, then plain `.tar`. */
+    /** Prefer encrypted `.tar.enc`, then plain `.tar`. */
     fun resolveApkPart(packageDir: File): File? =
         listOf(
             File(File(packageDir, DIR_APK), TAR_APK_ENC),
-            File(File(packageDir, DIR_APK), ZIP_APK),
             File(File(packageDir, DIR_APK), TAR_APK),
         ).firstOrNull { it.isFile }
 
     fun resolveUserCePart(packageDir: File): File? =
         listOf(
             File(File(packageDir, DIR_INT_DATA), TAR_USER_ENC),
-            File(File(packageDir, DIR_INT_DATA), ZIP_USER),
             File(File(packageDir, DIR_INT_DATA), TAR_USER),
         ).firstOrNull { it.isFile }
 
     fun resolveUserDePart(packageDir: File): File? =
         listOf(
             File(File(packageDir, DIR_INT_DATA), TAR_USER_DE_ENC),
-            File(File(packageDir, DIR_INT_DATA), ZIP_USER_DE),
             File(File(packageDir, DIR_INT_DATA), TAR_USER_DE),
         ).firstOrNull { it.isFile }
 
     fun resolveExtDataPart(packageDir: File): File? =
         listOf(
             File(File(packageDir, DIR_EXT_DATA), TAR_DATA_ENC),
-            File(File(packageDir, DIR_EXT_DATA), ZIP_DATA),
             File(File(packageDir, DIR_EXT_DATA), TAR_DATA),
         ).firstOrNull { it.isFile }
 
     fun resolveObbPart(packageDir: File): File? =
         listOf(
             File(File(packageDir, DIR_ADDL_DATA), TAR_OBB_ENC),
-            File(File(packageDir, DIR_ADDL_DATA), ZIP_OBB),
             File(File(packageDir, DIR_ADDL_DATA), TAR_OBB),
         ).firstOrNull { it.isFile }
 
     fun resolveMediaPart(packageDir: File): File? =
         listOf(
             File(File(packageDir, DIR_ADDL_DATA), TAR_MEDIA_ENC),
-            File(File(packageDir, DIR_ADDL_DATA), ZIP_MEDIA),
             File(File(packageDir, DIR_ADDL_DATA), TAR_MEDIA),
         ).firstOrNull { it.isFile }
 
@@ -118,8 +102,4 @@ object BackupInteropLayout {
             child = parent
         }
     }
-
-    @Deprecated("Use packageDirContainingArchive", ReplaceWith("packageDirContainingArchive(zip, backupBasePath)"))
-    fun packageDirContainingZip(zip: File, backupBasePath: String): File? =
-        packageDirContainingArchive(zip, backupBasePath)
 }

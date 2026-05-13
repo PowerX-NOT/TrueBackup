@@ -61,7 +61,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.truebackup.app.R
-import dev.truebackup.app.backup.BackupTbk1Tree
+import dev.truebackup.app.backup.BackupOpenSslTarEncTree
 import dev.truebackup.app.root.RootPreflight
 import dev.truebackup.app.root.RootPreflightResult
 import dev.truebackup.app.settings.AppSettingsRepository
@@ -147,7 +147,7 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
         }
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ── Security (registration password / TBK1) ───────────────────────────
+        // ── Security (registration password / backup crypto) ───────────────────────────
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
@@ -157,7 +157,7 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    stringResource(R.string.tbk1_password_required_hint),
+                    stringResource(R.string.backup_password_required_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -342,8 +342,8 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
                                 }
                                 val result = withContext(Dispatchers.IO) {
                                     val base = baseTrimmed
-                                    if (BackupTbk1Tree.hasAnyEncryptedArchives(base)) {
-                                        if (!BackupTbk1Tree.canDecryptAnyEncrypted(base, registerNew, context.cacheDir)) {
+                                    if (BackupOpenSslTarEncTree.hasAnyEncryptedArchives(base)) {
+                                        if (!BackupOpenSslTarEncTree.canDecryptAnyEncrypted(base, registerNew, context.cacheDir)) {
                                             return@withContext "mismatch"
                                         }
                                     }
@@ -481,7 +481,7 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
                                         return@withContext "old"
                                     }
                                     val base = backupBasePath
-                                    if (BackupTbk1Tree.hasAnyEncryptedArchives(base)) {
+                                    if (BackupOpenSslTarEncTree.hasAnyEncryptedArchives(base)) {
                                         return@withContext "nav_reencrypt"
                                     }
                                     if (!passwordStore.changePlaintext(changeOld, changeNew)) {

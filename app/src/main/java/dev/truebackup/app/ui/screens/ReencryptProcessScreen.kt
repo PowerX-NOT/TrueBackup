@@ -69,7 +69,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.truebackup.app.R
 import dev.truebackup.app.backup.BackupInteropLayout
-import dev.truebackup.app.backup.BackupTbk1Tree
+import dev.truebackup.app.backup.BackupOpenSslTarEncTree
 import dev.truebackup.app.backup.InteropBackupIndex
 import dev.truebackup.app.settings.PasswordChangeRekeySession
 import dev.truebackup.app.settings.RegistrationPasswordStore
@@ -90,7 +90,7 @@ private data class ReencryptRow(
 
 /**
  * Full-screen re-encryption after the user changes the registration password from Settings.
- * Handles OpenSSL `.tar.enc` archives (this app) and legacy TBK1 `.zip` (ROM TrueBackup).
+ * Re-keys OpenSSL `.tar.enc` archives under the backup tree.
  * Expects a one-time [PasswordChangeRekeySession] payload (not passed through navigation).
  */
 @Composable
@@ -138,7 +138,7 @@ fun ReencryptProcessScreen(onFinished: () -> Unit) {
         val base = pending.backupBasePath
         val oldPw = pending.oldPassword
         val newPw = pending.newPassword
-        val archives = withContext(Dispatchers.IO) { BackupTbk1Tree.collectAllRekeyableArchives(base) }
+        val archives = withContext(Dispatchers.IO) { BackupOpenSslTarEncTree.collectOpenSslTarEncArchives(base) }
         if (archives.isEmpty()) {
             val ok = withContext(Dispatchers.IO) {
                 passwordStore.changePlaintext(oldPw, newPw)
@@ -173,13 +173,9 @@ fun ReencryptProcessScreen(onFinished: () -> Unit) {
         for (i in groups.indices) {
             currentIndex = i
             entries[i] = entries[i].copy(status = ReencryptRowStatus.IN_PROGRESS)
-            for (arc in groups[i].zips) {
+            for (arc in groups[i].archives) {
                 val ok = withContext(Dispatchers.IO) {
-                    if (arc.name.endsWith(".tar.enc", ignoreCase = true)) {
-                        BackupTbk1Tree.rekeySingleOpenSslTarEnc(arc, oldPw, newPw)
-                    } else {
-                        BackupTbk1Tree.rekeySingleTbk1Zip(arc, oldPw, newPw, workDir)
-                    }
+                    BackupOpenSslTarEncTree.rekeySingleOpenSslTarEnc(arc, oldPw, newPw)
                 }
                 if (!ok) {
                     entries[i] = entries[i].copy(
@@ -517,21 +513,21 @@ private fun ReencryptSummaryStat(
 private data class AppRekeyGroup(
     val key: String,
     val title: String,
-    val zips: List<File>
+    val archives: List<File>
 )
 
-private fun buildAppRekeyGroups(context: Context, zips: List<File>, backupBasePath: String): List<AppRekeyGroup> {
+private fun buildAppRekeyGroups(context: Context, archives: List<File>, backupBasePath: String): List<AppRekeyGroup> {
     val map = linkedMapOf<String, MutableList<File>>()
-    for (z in zips) {
-        val pkgDir = BackupInteropLayout.packageDirContainingArchive(z, backupBasePath)
-        val groupKey = pkgDir?.absolutePath ?: z.absolutePath
-        map.getOrPut(groupKey) { mutableListOf() }.add(z)
+    for (arc in archives) {
+        val pkgDir = BackupInteropLayout.packageDirContainingArchive(arc, backupBasePath)
+        val groupKey = pkgDir?.absolutePath ?: arc.absolutePath
+        map.getOrPut(groupKey) { mutableListOf() }.add(arc)
     }
-    return map.map { (groupKey, zipList) ->
-        val first = zipList.first()
+    return map.map { (groupKey, arcList) ->
+        val first = arcList.first()
         val pkgDir = BackupInteropLayout.packageDirContainingArchive(first, backupBasePath)
         val title = if (pkgDir != null) resolveAppTitle(context, pkgDir) else first.name
-        AppRekeyGroup(key = groupKey, title = title, zips = zipList)
+        AppRekeyGroup(key = groupKey, title = title, archives = arcList)
     }
 }
 

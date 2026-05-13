@@ -19,7 +19,7 @@ class RootRestoreInteropManager(
     fun restoreFromInteropBackup(
         packageName: String,
         packageDir: File,
-        /** Plaintext registration password; required for `.tar.enc` and TBK1 `.zip` archives. */
+        /** Plaintext registration password; required for `.tar.enc` archives. */
         decryptionPassword: String? = null
     ) {
         val cfg = BackupInteropLayout.configFile(packageDir)
@@ -238,20 +238,12 @@ class RootRestoreInteropManager(
                     plainTar.delete()
                 }
             }
-            Tbk1Codec.isTbk1(archive) || archive.name.endsWith(".zip", ignoreCase = true) -> {
-                val plainZip = materializePlainZip(archive, decryptionPassword)
-                try {
-                    JvmZip.unzip(plainZip, destDir)
-                } finally {
-                    if (plainZip != archive) plainZip.delete()
-                }
-            }
             archive.name.endsWith(".tar", ignoreCase = true) -> {
                 if (!TarArchive.extractToDirectory(archive, destDir)) {
                     throw IllegalStateException("tar extract failed for ${archive.name}")
                 }
             }
-            else -> throw IllegalStateException("Unsupported archive format: ${archive.name}")
+            else -> throw IllegalStateException("Unsupported archive format (expected .tar or .tar.enc): ${archive.name}")
         }
     }
 
@@ -286,24 +278,6 @@ class RootRestoreInteropManager(
         } finally {
             staging.deleteRecursively()
         }
-    }
-
-    /**
-     * If [zip] is TBK1, decrypts to a temp plain zip using [decryptionPassword]; otherwise returns [zip].
-     */
-    private fun materializePlainZip(zip: File, decryptionPassword: String?): File {
-        if (!Tbk1Codec.isTbk1(zip)) return zip
-        if (decryptionPassword.isNullOrBlank()) {
-            throw IllegalStateException(
-                "This backup is TBK1-encrypted (.zip). Open Settings and save the same registration password used when the backup was created (ROM TrueBackup or this app)."
-            )
-        }
-        val tmp = File(context.cacheDir, "tb_plain_${UUID.randomUUID()}.zip")
-        if (!Tbk1Codec.decryptToFile(zip, tmp, decryptionPassword)) {
-            tmp.delete()
-            throw IllegalStateException("TBK1 decrypt failed for ${zip.name} (wrong password or corrupt file).")
-        }
-        return tmp
     }
 
     private fun statGidOrUid(refDir: String, uidFallback: Int): Int {

@@ -21,7 +21,7 @@
     <string name="password_dialog_change_title">Change password</string>
     <string name="password_status_registered">A registration password is saved.</string>
     <string name="password_status_not_registered">No registration password yet. Tap Register password to add one.</string>
-    <string name="tbk1_password_required_hint">New backups use tar archives encrypted with OpenSSL (AES-256-CBC, PBKDF2), matching common shell pipelines. For older ROM backups that use TBK1 zip containers, use the same passphrase you use on the ROM. Backup and restore require a saved password.</string>
+    <string name="backup_password_required_hint">Backups use tar archives encrypted with OpenSSL (AES-256-CBC, PBKDF2), matching common shell pipelines. Backup and restore require a saved registration password.</string>
     <string name="password_required_for_backup_restore">Register a password in Settings before backing up or restoring.</string>
     <string name="password_required_hint_short">Register a password in Settings to use backup and restore.</string>
     <string name="password_register_requires_backup_folder">Choose a backup folder above before registering a password.</string>
@@ -30,7 +30,7 @@
     <string name="reencrypt_headline_done">Re-encrypt complete</string>
     <string name="reencrypt_headline_error">Could not start</string>
     <string name="reencrypt_session_missing">Something went wrong. Open Change password from Settings again.</string>
-    <string name="reencrypt_no_archives_saved">No TBK1 archives found; your new password was saved.</string>
+    <string name="reencrypt_no_archives_saved">No encrypted archives found; your new password was saved.</string>
     <string name="reencrypt_password_save_failed">Re-encryption finished but saving the new password failed. Do not clear app data; try changing the password again from Settings.</string>
     <string name="reencrypt_summary_fmt">%1$d of %2$d apps re-encrypted</string>
     <string name="reencrypt_progress_fmt">%1$d of %2$d apps</string>

@@ -57,7 +57,7 @@ sealed class AppDestination(
         unselectedIcon = Icons.Outlined.RestorePage
     )
 
-    /** Re-encrypt TBK1 archives after registration password change (from Settings). */
+    /** Re-encrypt OpenSSL `.tar.enc` archives after registration password change (from Settings). */
     data object ReencryptProcess : AppDestination(
         route = "reencrypt_process",
         label = "Re-encrypt",

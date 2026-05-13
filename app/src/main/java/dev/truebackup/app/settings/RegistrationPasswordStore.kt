@@ -16,10 +16,9 @@ import javax.crypto.spec.GCMParameterSpec
  * Same at-rest registration password scheme as [com.android.server.TrueBackupService]:
  * AES-256-GCM via AndroidKeyStore alias `truebackup_registration_password_v1`, blob prefix `tbpw1:`.
  * ROM `truebackupd` stores the blob under `/data/system/truebackup/registration_password.bin`; here we
- * use an app-private file so the plaintext password is recoverable for TBK1 on-device operations.
+ * use an app-private file so the plaintext password is recoverable for on-device decrypt/rekey of encrypted archives.
  *
- * **Interoperability:** New app backups use **OpenSSL** `enc -aes-256-cbc -salt -pbkdf2` on tarballs (UTF-8 `-k` passphrase).
- * Legacy **TBK1** `.zip` archives from ROM TrueBackup still use the same plaintext passphrase for decrypt/rekey.
+ * **Backups:** App backups use **OpenSSL** `enc -aes-256-cbc -salt -pbkdf2` on tarballs (UTF-8 `-k` passphrase).
  */
 class RegistrationPasswordStore(private val context: Context) {
 
