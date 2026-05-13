@@ -120,12 +120,6 @@ fun RestoreScreen(
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold
         )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            "Apps found under your backup folder (TrueBackup interop layout).",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
         Spacer(modifier = Modifier.height(12.dp))
 
         PillSearchBarRestore(
