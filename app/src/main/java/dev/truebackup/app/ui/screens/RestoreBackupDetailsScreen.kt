@@ -23,20 +23,19 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -74,7 +73,7 @@ private data class BackupDetailsDisplay(
     val permissionsEmpty: Boolean,
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** Matches [RestoreScreen] layout: padded column, headline, cards with 12dp corners and surfaceContainerHigh. */
 @Composable
 fun RestoreBackupDetailsScreen(
     args: RestoreBackupDetailNavArgs,
@@ -112,27 +111,38 @@ fun RestoreBackupDetailsScreen(
         jsonRoot != null && LocalBackupDeletion.mayDeleteBackup(args.backupBasePath, packageDir, jsonRoot)
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.backup_detail_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.backup_detail_navigate_up)
-                        )
-                    }
-                }
-            )
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = stringResource(R.string.backup_detail_navigate_up)
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.backup_detail_title),
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
-    ) { padding ->
+
+        Spacer(modifier = Modifier.height(12.dp))
+
         when {
             loadError != null -> {
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding)
+                        .fillMaxWidth()
+                        .weight(1f)
                         .padding(24.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -142,18 +152,22 @@ fun RestoreBackupDetailsScreen(
             display == null -> {
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
+                        .fillMaxWidth()
+                        .weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(stringResource(R.string.backup_detail_loading), style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        stringResource(R.string.backup_detail_loading),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
             else -> {
                 RestoreBackupDetailsContent(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
+                        .fillMaxWidth()
+                        .weight(1f),
                     display = display,
                     packageName = display.packageName,
                     canDelete = canDelete,
@@ -225,18 +239,22 @@ private fun RestoreBackupDetailsContent(
     }
 
     LazyColumn(
-        modifier = modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (appIcon != null) {
@@ -244,30 +262,30 @@ private fun RestoreBackupDetailsContent(
                             bitmap = appIcon.asImageBitmap(),
                             contentDescription = display.appLabel,
                             modifier = Modifier
-                                .size(48.dp)
+                                .size(36.dp)
                                 .clip(CircleShape)
                         )
                     } else {
                         Box(
                             modifier = Modifier
-                                .size(48.dp)
+                                .size(36.dp)
                                 .clip(CircleShape)
                                 .background(MaterialTheme.colorScheme.surfaceVariant),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = display.appLabel.ifBlank { "?" }.take(1).uppercase(),
-                                style = MaterialTheme.typography.titleLarge,
+                                style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.width(16.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(display.appLabel, style = MaterialTheme.typography.titleLarge)
+                        Text(display.appLabel, style = MaterialTheme.typography.titleMedium)
                         Text(
                             display.packageName,
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -280,7 +298,7 @@ private fun RestoreBackupDetailsContent(
                 isPackageInstalled(context.packageManager, display.packageName)
             }
             if (installed) {
-                TextButton(
+                Button(
                     onClick = {
                         val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                             data = Uri.parse("package:${display.packageName}")
@@ -306,9 +324,7 @@ private fun RestoreBackupDetailsContent(
         item {
             SectionCard(title = stringResource(R.string.backup_detail_section_parts)) {
                 display.partRows.forEachIndexed { index, row ->
-                    if (index > 0) {
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                    }
+                    if (index > 0) Spacer(modifier = Modifier.height(12.dp))
                     DetailLine(title = row.first, body = row.second)
                 }
             }
@@ -317,9 +333,7 @@ private fun RestoreBackupDetailsContent(
         item {
             SectionCard(title = stringResource(R.string.backup_detail_section_info)) {
                 display.infoRows.forEachIndexed { index, row ->
-                    if (index > 0) {
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                    }
+                    if (index > 0) Spacer(modifier = Modifier.height(12.dp))
                     DetailLine(title = row.first, body = row.second)
                 }
             }
@@ -335,9 +349,7 @@ private fun RestoreBackupDetailsContent(
                     )
                 } else {
                     display.permissionRows.forEachIndexed { index, row ->
-                        if (index > 0) {
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                        }
+                        if (index > 0) Spacer(modifier = Modifier.height(12.dp))
                         DetailLine(title = row.first, body = row.second)
                     }
                 }
@@ -347,13 +359,17 @@ private fun RestoreBackupDetailsContent(
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
-                Column(Modifier.padding(16.dp)) {
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
                     Text(
                         stringResource(R.string.backup_detail_delete_backup),
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onErrorContainer
+                        fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
@@ -363,12 +379,19 @@ private fun RestoreBackupDetailsContent(
                             stringResource(R.string.backup_detail_delete_unavailable)
                         },
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(12.dp))
-                    TextButton(
+                    Button(
                         onClick = onDeleteClick,
-                        enabled = canDelete
+                        enabled = canDelete,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError,
+                            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     ) {
                         Text(stringResource(R.string.backup_detail_delete_action))
                     }
@@ -380,19 +403,22 @@ private fun RestoreBackupDetailsContent(
 
 @Composable
 private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column {
+    Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             title,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
         )
         Card(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
         ) {
-            Column(Modifier.padding(16.dp), content = content)
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), content = content)
         }
     }
 }
@@ -402,13 +428,13 @@ private fun DetailLine(title: String, body: String) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             title,
-            style = MaterialTheme.typography.labelLarge,
+            style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(modifier = Modifier.height(2.dp))
         Text(
             body,
-            style = MaterialTheme.typography.bodyLarge
+            style = MaterialTheme.typography.bodyMedium
         )
     }
 }
