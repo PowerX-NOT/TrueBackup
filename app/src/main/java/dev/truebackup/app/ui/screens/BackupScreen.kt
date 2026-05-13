@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import dev.truebackup.app.R
 import dev.truebackup.app.settings.AppSettingsRepository
+import dev.truebackup.app.ui.rememberPackageChangeCounter
 import dev.truebackup.app.settings.RegistrationPasswordStore
 import dev.truebackup.app.ui.navigation.BackupProcessArgs
 import kotlinx.coroutines.Dispatchers
@@ -62,7 +63,8 @@ import kotlinx.coroutines.withContext
 fun BackupScreen(onStartBackup: (BackupProcessArgs) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val installedApps = remember(context) { loadInstalledApps(context) }
+    val packageChangeTick = rememberPackageChangeCounter()
+    val installedApps = remember(packageChangeTick, context) { loadInstalledApps(context) }
     val repo = remember(context) { AppSettingsRepository(context) }
     val passwordStore = remember(context) { RegistrationPasswordStore(context) }
     val basePath by repo.backupBasePath.collectAsState(initial = null)
@@ -87,6 +89,11 @@ fun BackupScreen(onStartBackup: (BackupProcessArgs) -> Unit) {
                 it.label.lowercase().contains(query) || it.packageName.lowercase().contains(query)
             }
         }
+    }
+
+    LaunchedEffect(installedApps) {
+        val valid = installedApps.map { it.packageName }.toSet()
+        selectedPackages = selectedPackages.intersect(valid)
     }
 
     Column(
@@ -188,7 +195,7 @@ fun BackupScreen(onStartBackup: (BackupProcessArgs) -> Unit) {
             ) {
                 items(filteredApps, key = { it.packageName }) { app ->
                     val checked = selectedPackages.contains(app.packageName)
-                    val appIcon = remember(app.packageName) {
+                    val appIcon = remember(app.packageName, packageChangeTick) {
                         runCatching {
                             context.packageManager.getApplicationIcon(app.packageName)
                                 .toBitmap(96, 96)

@@ -52,6 +52,7 @@ import dev.truebackup.app.backup.InteropBackedUpPackage
 import dev.truebackup.app.backup.InteropBackupIndex
 import dev.truebackup.app.settings.AppSettingsRepository
 import dev.truebackup.app.settings.RegistrationPasswordStore
+import dev.truebackup.app.ui.rememberPackageChangeCounter
 import dev.truebackup.app.ui.navigation.RestoreProcessArgs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -61,6 +62,7 @@ import kotlinx.coroutines.withContext
 fun RestoreScreen(onStartRestore: (RestoreProcessArgs) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val packageChangeTick = rememberPackageChangeCounter()
     val repo = remember(context) { AppSettingsRepository(context) }
     val passwordStore = remember(context) { RegistrationPasswordStore(context) }
     val basePath by repo.backupBasePath.collectAsState(initial = null)
@@ -71,7 +73,7 @@ fun RestoreScreen(onStartRestore: (RestoreProcessArgs) -> Unit) {
     }
 
     var backedUp by remember { mutableStateOf<List<InteropBackedUpPackage>>(emptyList()) }
-    LaunchedEffect(basePath) {
+    LaunchedEffect(basePath, packageChangeTick) {
         val bp = basePath?.trim()?.takeIf { it.isNotEmpty() }
         backedUp = if (bp != null) {
             withContext(Dispatchers.IO) {
@@ -94,6 +96,11 @@ fun RestoreScreen(onStartRestore: (RestoreProcessArgs) -> Unit) {
                 it.label.lowercase().contains(q) || it.packageName.lowercase().contains(q)
             }
         }
+    }
+
+    LaunchedEffect(backedUp) {
+        val paths = backedUp.map { it.packageDir.absolutePath }.toSet()
+        selectedBackupPaths = selectedBackupPaths.intersect(paths)
     }
 
     Column(
@@ -200,6 +207,7 @@ fun RestoreScreen(onStartRestore: (RestoreProcessArgs) -> Unit) {
                                 selectedBackupPaths - rowKey
                             }
                         },
+                        packageChangeTick = packageChangeTick,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -213,10 +221,11 @@ private fun RestorePickRow(
     item: InteropBackedUpPackage,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    packageChangeTick: Int,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val appIcon = remember(item.packageName) {
+    val appIcon = remember(item.packageName, packageChangeTick) {
         runCatching {
             context.packageManager.getApplicationIcon(item.packageName).toBitmap(96, 96)
         }.getOrNull()
