@@ -1,6 +1,5 @@
 package dev.truebackup.app.ui.screens
 
-import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -57,7 +56,6 @@ import dev.truebackup.app.ui.navigation.RestoreProcessArgs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.concurrent.ConcurrentHashMap
 
 @Composable
 fun RestoreScreen(onStartRestore: (RestoreProcessArgs) -> Unit) {
@@ -183,7 +181,7 @@ fun RestoreScreen(onStartRestore: (RestoreProcessArgs) -> Unit) {
         ) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.Top
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(
                     items = filtered,
@@ -202,37 +200,11 @@ fun RestoreScreen(onStartRestore: (RestoreProcessArgs) -> Unit) {
                                 selectedBackupPaths - rowKey
                             }
                         },
-                        modifier = Modifier.padding(vertical = 4.dp)
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
         }
-    }
-}
-
-private object RestoreAppIconCache {
-    private const val SIZE_PX = 96
-    /** Installed-app icons only; [ConcurrentHashMap] must not store null values. */
-    private val map = ConcurrentHashMap<String, Bitmap>()
-    /** Packages we already tried and could not decode an icon (uninstalled / interop-only). */
-    private val noIcon = ConcurrentHashMap.newKeySet<String>()
-
-    fun peek(packageName: String): Bitmap? {
-        if (noIcon.contains(packageName)) return null
-        return map[packageName]
-    }
-
-    suspend fun load(context: android.content.Context, packageName: String): Bitmap? {
-        if (noIcon.contains(packageName)) return null
-        map[packageName]?.let { return it }
-        val decoded = withContext(Dispatchers.IO) {
-            runCatching {
-                context.packageManager.getApplicationIcon(packageName).toBitmap(SIZE_PX, SIZE_PX)
-            }.getOrNull()
-        }
-        if (decoded != null) map[packageName] = decoded
-        else noIcon.add(packageName)
-        return decoded
     }
 }
 
@@ -244,13 +216,10 @@ private fun RestorePickRow(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var bitmap by remember(item.packageName) {
-        mutableStateOf(RestoreAppIconCache.peek(item.packageName))
-    }
-    LaunchedEffect(item.packageName) {
-        if (bitmap == null) {
-            bitmap = RestoreAppIconCache.load(context, item.packageName)
-        }
+    val appIcon = remember(item.packageName) {
+        runCatching {
+            context.packageManager.getApplicationIcon(item.packageName).toBitmap(96, 96)
+        }.getOrNull()
     }
 
     Card(
@@ -267,11 +236,9 @@ private fun RestorePickRow(
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val bmp = bitmap
-            if (bmp != null) {
-                val imageBitmap = remember(bmp) { bmp.asImageBitmap() }
+            if (appIcon != null) {
                 Image(
-                    bitmap = imageBitmap,
+                    bitmap = appIcon.asImageBitmap(),
                     contentDescription = item.label,
                     modifier = Modifier
                         .size(36.dp)
