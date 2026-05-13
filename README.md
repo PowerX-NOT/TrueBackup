@@ -29,6 +29,19 @@ It stores backups in an encrypted format inside a folder you choose, making it e
 
 ---
 
+## Screenshot
+
+<div align="center">
+	<img src="https://github.com/PowerX-NOT/TrueBackup/raw/main/screenshot/1.png" width="275px" alt="TrueBackup screenshot 1">
+	<img src="https://github.com/PowerX-NOT/TrueBackup/raw/main/screenshot/2.png" width="275px" alt="TrueBackup screenshot 2">
+	<img src="https://github.com/PowerX-NOT/TrueBackup/raw/main/screenshot/3.png" width="275px" alt="TrueBackup screenshot 3">
+	<img src="https://github.com/PowerX-NOT/TrueBackup/raw/main/screenshot/4.png" width="275px" alt="TrueBackup screenshot 4">
+	<img src="https://github.com/PowerX-NOT/TrueBackup/raw/main/screenshot/5.png" width="275px" alt="TrueBackup screenshot 5">
+	<img src="https://github.com/PowerX-NOT/TrueBackup/raw/main/screenshot/6.png" width="275px" alt="TrueBackup screenshot 6">
+</div>
+
+---
+
 ## Getting Started
 
 1. Open **Settings**
