@@ -18,7 +18,7 @@ import javax.crypto.spec.GCMParameterSpec
  * ROM `truebackupd` stores the blob under `/data/system/truebackup/registration_password.bin`; here we
  * use an app-private file so the plaintext password is recoverable for on-device decrypt/rekey of encrypted archives.
  *
- * **Backups:** App backups use **OpenSSL** `enc -aes-256-cbc -salt -pbkdf2` on tarballs (UTF-8 `-k` passphrase).
+ * **Backups:** `.tar.enc` uses the same on-disk format as **OpenSSL** `enc -aes-256-cbc -salt -pbkdf2` (UTF-8 passphrase), implemented in-app.
  */
 class RegistrationPasswordStore(private val context: Context) {
 

@@ -1,10 +1,6 @@
 package dev.truebackup.app.root
 
-/**
- * OpenSSL used for backup encrypt/decrypt/rekey under `su`.
- * Termux ships a usable `openssl`; system images often lack one in the root shell PATH.
- */
-private const val OPENSSL_EXECUTABLE = "/data/data/com.termux/files/usr/bin/openssl"
+import dev.truebackup.app.crypto.OpenSslEncCompat
 
 enum class PrivilegedOperationType {
     TAR_COPY,
@@ -71,39 +67,51 @@ class PrivilegedOperations(
     }
 
     fun encryptArchive(inputPath: String, outputPath: String, passphrase: String): PrivilegedOperationResult {
-        val command =
-            "$OPENSSL_EXECUTABLE enc -aes-256-cbc -salt -pbkdf2 -in '${escapeSingleQuotes(inputPath)}' " +
-                "-out '${escapeSingleQuotes(outputPath)}' -k '${escapeSingleQuotes(passphrase)}'"
-        return execute(PrivilegedOperationType.ENCRYPT_ARCHIVE, command)
+        val command = "internal:OpenSslEncCompat.encryptFile"
+        val ok = OpenSslEncCompat.encryptFile(inputPath, outputPath, passphrase)
+        return PrivilegedOperationResult(
+            type = PrivilegedOperationType.ENCRYPT_ARCHIVE,
+            command = command,
+            exitCode = if (ok) 0 else 1,
+            output = if (ok) "" else "OpenSslEncCompat.encryptFile failed"
+        )
     }
 
     fun decryptArchive(inputPath: String, outputPath: String, passphrase: String): PrivilegedOperationResult {
-        val command =
-            "$OPENSSL_EXECUTABLE enc -d -aes-256-cbc -pbkdf2 -in '${escapeSingleQuotes(inputPath)}' " +
-                "-out '${escapeSingleQuotes(outputPath)}' -k '${escapeSingleQuotes(passphrase)}'"
-        return execute(PrivilegedOperationType.DECRYPT_ARCHIVE, command)
+        val command = "internal:OpenSslEncCompat.decryptFile"
+        val ok = OpenSslEncCompat.decryptFile(inputPath, outputPath, passphrase)
+        return PrivilegedOperationResult(
+            type = PrivilegedOperationType.DECRYPT_ARCHIVE,
+            command = command,
+            exitCode = if (ok) 0 else 1,
+            output = if (ok) "" else "OpenSslEncCompat.decryptFile failed"
+        )
     }
 
     /**
      * Re-encrypt an OpenSSL `aes-256-cbc` + PBKDF2 archive in place (decrypt with [oldPassphrase], encrypt with [newPassphrase]).
      */
     fun rekeyOpensslEncInPlace(absPath: String, oldPassphrase: String, newPassphrase: String): PrivilegedOperationResult {
-        val p = escapeSingleQuotes(absPath)
-        val op = escapeSingleQuotes(oldPassphrase)
-        val np = escapeSingleQuotes(newPassphrase)
-        val tmp = escapeSingleQuotes("$absPath.rekey_tmp")
-        val command =
-            "rm -f '$tmp' && $OPENSSL_EXECUTABLE enc -d -aes-256-cbc -pbkdf2 -in '$p' -k '$op' | " +
-                "$OPENSSL_EXECUTABLE enc -aes-256-cbc -salt -pbkdf2 -out '$tmp' -k '$np' && mv '$tmp' '$p'"
-        return execute(PrivilegedOperationType.CUSTOM, command)
+        val command = "internal:OpenSslEncCompat.rekeyFileInPlace"
+        val ok = OpenSslEncCompat.rekeyFileInPlace(absPath, oldPassphrase, newPassphrase)
+        return PrivilegedOperationResult(
+            type = PrivilegedOperationType.CUSTOM,
+            command = command,
+            exitCode = if (ok) 0 else 1,
+            output = if (ok) "" else "OpenSslEncCompat.rekeyFileInPlace failed"
+        )
     }
 
-    /** Returns success if OpenSSL can decrypt [inputPath] with [passphrase] (output discarded). */
+    /** Returns success if the archive decrypts with [passphrase] (output discarded). */
     fun opensslDecryptProbe(inputPath: String, passphrase: String): PrivilegedOperationResult {
-        val command =
-            "$OPENSSL_EXECUTABLE enc -d -aes-256-cbc -pbkdf2 -in '${escapeSingleQuotes(inputPath)}' " +
-                "-k '${escapeSingleQuotes(passphrase)}' -out /dev/null"
-        return execute(PrivilegedOperationType.CUSTOM, command)
+        val command = "internal:OpenSslEncCompat.decryptProbe"
+        val ok = OpenSslEncCompat.decryptProbe(inputPath, passphrase)
+        return PrivilegedOperationResult(
+            type = PrivilegedOperationType.CUSTOM,
+            command = command,
+            exitCode = if (ok) 0 else 1,
+            output = if (ok) "" else "OpenSslEncCompat.decryptProbe failed"
+        )
     }
 
     fun runCustom(command: String): PrivilegedOperationResult {
