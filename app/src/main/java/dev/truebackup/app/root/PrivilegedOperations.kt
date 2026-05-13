@@ -1,5 +1,11 @@
 package dev.truebackup.app.root
 
+/**
+ * OpenSSL used for backup encrypt/decrypt/rekey under `su`.
+ * Termux ships a usable `openssl`; system images often lack one in the root shell PATH.
+ */
+private const val OPENSSL_EXECUTABLE = "/data/data/com.termux/files/usr/bin/openssl"
+
 enum class PrivilegedOperationType {
     TAR_COPY,
     CHOWN_RECURSIVE,
@@ -66,14 +72,14 @@ class PrivilegedOperations(
 
     fun encryptArchive(inputPath: String, outputPath: String, passphrase: String): PrivilegedOperationResult {
         val command =
-            "openssl enc -aes-256-cbc -salt -pbkdf2 -in '${escapeSingleQuotes(inputPath)}' " +
+            "$OPENSSL_EXECUTABLE enc -aes-256-cbc -salt -pbkdf2 -in '${escapeSingleQuotes(inputPath)}' " +
                 "-out '${escapeSingleQuotes(outputPath)}' -k '${escapeSingleQuotes(passphrase)}'"
         return execute(PrivilegedOperationType.ENCRYPT_ARCHIVE, command)
     }
 
     fun decryptArchive(inputPath: String, outputPath: String, passphrase: String): PrivilegedOperationResult {
         val command =
-            "openssl enc -d -aes-256-cbc -pbkdf2 -in '${escapeSingleQuotes(inputPath)}' " +
+            "$OPENSSL_EXECUTABLE enc -d -aes-256-cbc -pbkdf2 -in '${escapeSingleQuotes(inputPath)}' " +
                 "-out '${escapeSingleQuotes(outputPath)}' -k '${escapeSingleQuotes(passphrase)}'"
         return execute(PrivilegedOperationType.DECRYPT_ARCHIVE, command)
     }
@@ -87,15 +93,15 @@ class PrivilegedOperations(
         val np = escapeSingleQuotes(newPassphrase)
         val tmp = escapeSingleQuotes("$absPath.rekey_tmp")
         val command =
-            "rm -f '$tmp' && openssl enc -d -aes-256-cbc -pbkdf2 -in '$p' -k '$op' | " +
-                "openssl enc -aes-256-cbc -salt -pbkdf2 -out '$tmp' -k '$np' && mv '$tmp' '$p'"
+            "rm -f '$tmp' && $OPENSSL_EXECUTABLE enc -d -aes-256-cbc -pbkdf2 -in '$p' -k '$op' | " +
+                "$OPENSSL_EXECUTABLE enc -aes-256-cbc -salt -pbkdf2 -out '$tmp' -k '$np' && mv '$tmp' '$p'"
         return execute(PrivilegedOperationType.CUSTOM, command)
     }
 
     /** Returns success if OpenSSL can decrypt [inputPath] with [passphrase] (output discarded). */
     fun opensslDecryptProbe(inputPath: String, passphrase: String): PrivilegedOperationResult {
         val command =
-            "openssl enc -d -aes-256-cbc -pbkdf2 -in '${escapeSingleQuotes(inputPath)}' " +
+            "$OPENSSL_EXECUTABLE enc -d -aes-256-cbc -pbkdf2 -in '${escapeSingleQuotes(inputPath)}' " +
                 "-k '${escapeSingleQuotes(passphrase)}' -out /dev/null"
         return execute(PrivilegedOperationType.CUSTOM, command)
     }
