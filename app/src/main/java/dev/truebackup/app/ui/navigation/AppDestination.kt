@@ -65,9 +65,31 @@ sealed class AppDestination(
         unselectedIcon = Icons.Outlined.Settings
     )
 
+    /** Metadata for one app backup folder (from Restore list). */
+    data object RestoreBackupDetails : AppDestination(
+        route = "restore_backup_details",
+        label = "Backup details",
+        selectedIcon = Icons.Filled.RestorePage,
+        unselectedIcon = Icons.Outlined.RestorePage
+    )
+
     companion object {
         val bottomItems = listOf(Backup, Restore, Settings)
     }
+}
+
+/** Serializable path bundle for [AppDestination.RestoreBackupDetails] (SavedStateHandle). */
+data class RestoreBackupDetailNavArgs(
+    val packageDirAbsolutePath: String,
+    val backupBasePath: String,
+) : java.io.Serializable {
+    companion object {
+        private const val serialVersionUID = 1L
+    }
+}
+
+object RestoreNavKeys {
+    const val BACKUP_DETAIL_ARGS = "restore_backup_detail_nav_args"
 }
 
 /** Arguments for [AppDestination.RestoreProcess] (Serializable for SavedStateHandle). */

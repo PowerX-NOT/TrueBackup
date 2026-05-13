@@ -3,6 +3,7 @@ package dev.truebackup.app.ui.screens
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,13 +54,18 @@ import dev.truebackup.app.backup.InteropBackupIndex
 import dev.truebackup.app.settings.AppSettingsRepository
 import dev.truebackup.app.settings.RegistrationPasswordStore
 import dev.truebackup.app.ui.rememberPackageChangeCounter
+import dev.truebackup.app.ui.navigation.RestoreBackupDetailNavArgs
 import dev.truebackup.app.ui.navigation.RestoreProcessArgs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-fun RestoreScreen(onStartRestore: (RestoreProcessArgs) -> Unit) {
+fun RestoreScreen(
+    listRefreshVersion: Int = 0,
+    onStartRestore: (RestoreProcessArgs) -> Unit,
+    onOpenBackupDetails: (RestoreBackupDetailNavArgs) -> Unit,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val packageChangeTick = rememberPackageChangeCounter()
@@ -73,7 +79,7 @@ fun RestoreScreen(onStartRestore: (RestoreProcessArgs) -> Unit) {
     }
 
     var backedUp by remember { mutableStateOf<List<InteropBackedUpPackage>>(emptyList()) }
-    LaunchedEffect(basePath, packageChangeTick) {
+    LaunchedEffect(basePath, packageChangeTick, listRefreshVersion) {
         val bp = basePath?.trim()?.takeIf { it.isNotEmpty() }
         backedUp = if (bp != null) {
             withContext(Dispatchers.IO) {
@@ -207,6 +213,15 @@ fun RestoreScreen(onStartRestore: (RestoreProcessArgs) -> Unit) {
                                 selectedBackupPaths - rowKey
                             }
                         },
+                        onOpenDetails = {
+                            val bp = basePath?.trim()?.takeIf { it.isNotEmpty() } ?: return@RestorePickRow
+                            onOpenBackupDetails(
+                                RestoreBackupDetailNavArgs(
+                                    packageDirAbsolutePath = pkg.packageDir.absolutePath,
+                                    backupBasePath = bp,
+                                )
+                            )
+                        },
                         packageChangeTick = packageChangeTick,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -221,6 +236,7 @@ private fun RestorePickRow(
     item: InteropBackedUpPackage,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    onOpenDetails: () -> Unit,
     packageChangeTick: Int,
     modifier: Modifier = Modifier
 ) {
@@ -245,6 +261,12 @@ private fun RestorePickRow(
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = onOpenDetails),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
             if (appIcon != null) {
                 Image(
                     bitmap = appIcon.asImageBitmap(),
@@ -276,6 +298,7 @@ private fun RestorePickRow(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
             }
             Checkbox(
                 checked = checked,

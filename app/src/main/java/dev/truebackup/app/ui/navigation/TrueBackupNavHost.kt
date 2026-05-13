@@ -13,6 +13,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -20,6 +24,7 @@ import androidx.navigation.compose.composable
 import dev.truebackup.app.ui.screens.BackupProcessScreen
 import dev.truebackup.app.ui.screens.BackupScreen
 import dev.truebackup.app.ui.screens.ReencryptProcessScreen
+import dev.truebackup.app.ui.screens.RestoreBackupDetailsScreen
 import dev.truebackup.app.ui.screens.RestoreProcessScreen
 import dev.truebackup.app.ui.screens.RestoreScreen
 import dev.truebackup.app.ui.screens.SettingsScreen
@@ -85,6 +90,8 @@ fun TrueBackupNavHost(
     navController: NavHostController,
     modifier: Modifier = Modifier
 ) {
+    var restoreListVersion by remember { mutableIntStateOf(0) }
+
     NavHost(
         navController = navController,
         startDestination = AppDestination.Backup.route,
@@ -106,9 +113,39 @@ fun TrueBackupNavHost(
         }
         composable(AppDestination.Restore.route) { backStackEntry ->
             RestoreScreen(
+                listRefreshVersion = restoreListVersion,
                 onStartRestore = { args ->
                     backStackEntry.savedStateHandle["restore_process_args"] = args
                     navController.navigate(AppDestination.RestoreProcess.route)
+                },
+                onOpenBackupDetails = { detailArgs ->
+                    backStackEntry.savedStateHandle[RestoreNavKeys.BACKUP_DETAIL_ARGS] = detailArgs
+                    navController.navigate(AppDestination.RestoreBackupDetails.route)
+                }
+            )
+        }
+        composable(AppDestination.RestoreBackupDetails.route) {
+            val args = navController.previousBackStackEntry
+                ?.savedStateHandle
+                ?.get<RestoreBackupDetailNavArgs>(RestoreNavKeys.BACKUP_DETAIL_ARGS)
+
+            LaunchedEffect(args) {
+                if (args == null) {
+                    navController.popBackStack()
+                }
+            }
+
+            if (args == null) {
+                Box(modifier = Modifier.fillMaxSize())
+                return@composable
+            }
+
+            RestoreBackupDetailsScreen(
+                args = args,
+                onBack = { navController.popBackStack() },
+                onDeleted = {
+                    restoreListVersion++
+                    navController.popBackStack()
                 }
             )
         }
