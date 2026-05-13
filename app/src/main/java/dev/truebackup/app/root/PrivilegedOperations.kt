@@ -78,6 +78,28 @@ class PrivilegedOperations(
         return execute(PrivilegedOperationType.DECRYPT_ARCHIVE, command)
     }
 
+    /**
+     * Re-encrypt an OpenSSL `aes-256-cbc` + PBKDF2 archive in place (decrypt with [oldPassphrase], encrypt with [newPassphrase]).
+     */
+    fun rekeyOpensslEncInPlace(absPath: String, oldPassphrase: String, newPassphrase: String): PrivilegedOperationResult {
+        val p = escapeSingleQuotes(absPath)
+        val op = escapeSingleQuotes(oldPassphrase)
+        val np = escapeSingleQuotes(newPassphrase)
+        val tmp = escapeSingleQuotes("$absPath.rekey_tmp")
+        val command =
+            "rm -f '$tmp' && openssl enc -d -aes-256-cbc -pbkdf2 -in '$p' -k '$op' | " +
+                "openssl enc -aes-256-cbc -salt -pbkdf2 -out '$tmp' -k '$np' && mv '$tmp' '$p'"
+        return execute(PrivilegedOperationType.CUSTOM, command)
+    }
+
+    /** Returns success if OpenSSL can decrypt [inputPath] with [passphrase] (output discarded). */
+    fun opensslDecryptProbe(inputPath: String, passphrase: String): PrivilegedOperationResult {
+        val command =
+            "openssl enc -d -aes-256-cbc -pbkdf2 -in '${escapeSingleQuotes(inputPath)}' " +
+                "-k '${escapeSingleQuotes(passphrase)}' -out /dev/null"
+        return execute(PrivilegedOperationType.CUSTOM, command)
+    }
+
     fun runCustom(command: String): PrivilegedOperationResult {
         return execute(PrivilegedOperationType.CUSTOM, command)
     }

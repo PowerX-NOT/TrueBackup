@@ -28,7 +28,8 @@ class PackageBackupConfigWriter(
     fun write(
         packageName: String,
         packageDir: File,
-        partFlags: BackupPartFlags
+        partFlags: BackupPartFlags,
+        useOpensslTarEnc: Boolean = false
     ): File {
         val config = BackupInteropLayout.configFile(packageDir)
         val now = System.currentTimeMillis()
@@ -70,7 +71,8 @@ class PackageBackupConfigWriter(
         val backupConfig = JSONObject()
             .put("packageName", packageName)
             .put("userId", 0)
-            .put("compression", "zip")
+            .put("compression", "tar")
+            .put("encryption", if (useOpensslTarEnc) "openssl-aes-256-cbc-pbkdf2" else "none")
             .put("preserveId", now)
             .put("storagePath", packageDir.absolutePath)
             .put("createdAt", now)
@@ -86,12 +88,12 @@ class PackageBackupConfigWriter(
         root.put("dataStates", dataStates)
 
         val dataStats = JSONObject()
-            .put("apkBytes", fileSizeIfExists(BackupInteropLayout.apkZip(packageDir)))
-            .put("userBytes", fileSizeIfExists(BackupInteropLayout.userCeZip(packageDir)))
-            .put("userDeBytes", fileSizeIfExists(BackupInteropLayout.userDeZip(packageDir)))
-            .put("dataBytes", fileSizeIfExists(BackupInteropLayout.extDataZip(packageDir)))
-            .put("obbBytes", fileSizeIfExists(BackupInteropLayout.obbZip(packageDir)))
-            .put("mediaBytes", fileSizeIfExists(BackupInteropLayout.mediaZip(packageDir)))
+            .put("apkBytes", BackupInteropLayout.partFileSizeOrZero(BackupInteropLayout.resolveApkPart(packageDir)))
+            .put("userBytes", BackupInteropLayout.partFileSizeOrZero(BackupInteropLayout.resolveUserCePart(packageDir)))
+            .put("userDeBytes", BackupInteropLayout.partFileSizeOrZero(BackupInteropLayout.resolveUserDePart(packageDir)))
+            .put("dataBytes", BackupInteropLayout.partFileSizeOrZero(BackupInteropLayout.resolveExtDataPart(packageDir)))
+            .put("obbBytes", BackupInteropLayout.partFileSizeOrZero(BackupInteropLayout.resolveObbPart(packageDir)))
+            .put("mediaBytes", BackupInteropLayout.partFileSizeOrZero(BackupInteropLayout.resolveMediaPart(packageDir)))
         root.put("dataStats", dataStats)
 
         val security = JSONObject()
@@ -107,10 +109,6 @@ class PackageBackupConfigWriter(
         config.parentFile?.mkdirs()
         config.writeText(root.toString(2))
         return config
-    }
-
-    private fun fileSizeIfExists(file: File): Long {
-        return if (file.exists() && file.isFile) file.length() else 0L
     }
 
     private fun buildPermissionsJson(pm: PackageManager, pi: PackageInfo?): JSONArray {

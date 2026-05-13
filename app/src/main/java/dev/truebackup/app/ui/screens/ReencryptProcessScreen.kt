@@ -89,7 +89,8 @@ private data class ReencryptRow(
 )
 
 /**
- * Full-screen TBK1 re-encryption after the user changes the registration password from Settings.
+ * Full-screen re-encryption after the user changes the registration password from Settings.
+ * Handles OpenSSL `.tar.enc` archives (this app) and legacy TBK1 `.zip` (ROM TrueBackup).
  * Expects a one-time [PasswordChangeRekeySession] payload (not passed through navigation).
  */
 @Composable
@@ -137,8 +138,8 @@ fun ReencryptProcessScreen(onFinished: () -> Unit) {
         val base = pending.backupBasePath
         val oldPw = pending.oldPassword
         val newPw = pending.newPassword
-        val zips = withContext(Dispatchers.IO) { BackupTbk1Tree.collectTbk1Zips(base) }
-        if (zips.isEmpty()) {
+        val archives = withContext(Dispatchers.IO) { BackupTbk1Tree.collectAllRekeyableArchives(base) }
+        if (archives.isEmpty()) {
             val ok = withContext(Dispatchers.IO) {
                 passwordStore.changePlaintext(oldPw, newPw)
             }
@@ -155,7 +156,7 @@ fun ReencryptProcessScreen(onFinished: () -> Unit) {
             return@LaunchedEffect
         }
         val groups = withContext(Dispatchers.IO) {
-            buildAppRekeyGroups(context, zips, base)
+            buildAppRekeyGroups(context, archives, base)
         }
         val rows = groups.map { g ->
             ReencryptRow(
@@ -172,9 +173,13 @@ fun ReencryptProcessScreen(onFinished: () -> Unit) {
         for (i in groups.indices) {
             currentIndex = i
             entries[i] = entries[i].copy(status = ReencryptRowStatus.IN_PROGRESS)
-            for (zip in groups[i].zips) {
+            for (arc in groups[i].zips) {
                 val ok = withContext(Dispatchers.IO) {
-                    BackupTbk1Tree.rekeySingleTbk1Zip(zip, oldPw, newPw, workDir)
+                    if (arc.name.endsWith(".tar.enc", ignoreCase = true)) {
+                        BackupTbk1Tree.rekeySingleOpenSslTarEnc(arc, oldPw, newPw)
+                    } else {
+                        BackupTbk1Tree.rekeySingleTbk1Zip(arc, oldPw, newPw, workDir)
+                    }
                 }
                 if (!ok) {
                     entries[i] = entries[i].copy(
@@ -518,13 +523,13 @@ private data class AppRekeyGroup(
 private fun buildAppRekeyGroups(context: Context, zips: List<File>, backupBasePath: String): List<AppRekeyGroup> {
     val map = linkedMapOf<String, MutableList<File>>()
     for (z in zips) {
-        val pkgDir = BackupInteropLayout.packageDirContainingZip(z, backupBasePath)
+        val pkgDir = BackupInteropLayout.packageDirContainingArchive(z, backupBasePath)
         val groupKey = pkgDir?.absolutePath ?: z.absolutePath
         map.getOrPut(groupKey) { mutableListOf() }.add(z)
     }
     return map.map { (groupKey, zipList) ->
         val first = zipList.first()
-        val pkgDir = BackupInteropLayout.packageDirContainingZip(first, backupBasePath)
+        val pkgDir = BackupInteropLayout.packageDirContainingArchive(first, backupBasePath)
         val title = if (pkgDir != null) resolveAppTitle(context, pkgDir) else first.name
         AppRekeyGroup(key = groupKey, title = title, zips = zipList)
     }

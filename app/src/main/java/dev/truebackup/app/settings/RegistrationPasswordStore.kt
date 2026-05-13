@@ -18,8 +18,8 @@ import javax.crypto.spec.GCMParameterSpec
  * ROM `truebackupd` stores the blob under `/data/system/truebackup/registration_password.bin`; here we
  * use an app-private file so the plaintext password is recoverable for TBK1 on-device operations.
  *
- * **Interoperability:** TBK1 zip encryption uses the **UTF-8 plaintext** password. Backups encrypted on
- * a ROM with TrueBackup decrypt here when this store holds the same passphrase.
+ * **Interoperability:** New app backups use **OpenSSL** `enc -aes-256-cbc -salt -pbkdf2` on tarballs (UTF-8 `-k` passphrase).
+ * Legacy **TBK1** `.zip` archives from ROM TrueBackup still use the same plaintext passphrase for decrypt/rekey.
  */
 class RegistrationPasswordStore(private val context: Context) {
 

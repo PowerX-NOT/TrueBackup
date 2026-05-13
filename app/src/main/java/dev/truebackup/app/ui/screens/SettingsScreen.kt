@@ -342,8 +342,8 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
                                 }
                                 val result = withContext(Dispatchers.IO) {
                                     val base = baseTrimmed
-                                    if (BackupTbk1Tree.hasTbk1Archives(base)) {
-                                        if (!BackupTbk1Tree.canDecryptAnyTbk1(base, registerNew, context.cacheDir)) {
+                                    if (BackupTbk1Tree.hasAnyEncryptedArchives(base)) {
+                                        if (!BackupTbk1Tree.canDecryptAnyEncrypted(base, registerNew, context.cacheDir)) {
                                             return@withContext "mismatch"
                                         }
                                     }
@@ -481,7 +481,7 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
                                         return@withContext "old"
                                     }
                                     val base = backupBasePath
-                                    if (BackupTbk1Tree.hasTbk1Archives(base)) {
+                                    if (BackupTbk1Tree.hasAnyEncryptedArchives(base)) {
                                         return@withContext "nav_reencrypt"
                                     }
                                     if (!passwordStore.changePlaintext(changeOld, changeNew)) {

@@ -13,7 +13,7 @@ import java.util.UUID
 data class RootBackupRequest(
     val packageName: String,
     val basePath: String,
-    /** When true, encrypts each part zip with TBK1 using [encryptionPassword] (same as ROM TrueBackup). */
+    /** When true, writes `.tar.enc` parts using OpenSSL `enc -aes-256-cbc -salt -pbkdf2` (same idea as shell examples). */
     val encryptArchives: Boolean = false,
     val encryptionPassword: String? = null
 )
@@ -26,7 +26,7 @@ data class RootBackupPlanResult(
 
 /**
  * Backs up CE/DE and scoped storage paths (TrueBackup interop layout), stages with root filtered `tar`,
- * rechowns to this app via [Os.stat], then [JvmZip] writes zips under [BackupInteropLayout].
+ * rechowns to this app via [Os.stat], then writes **tar** archives (optionally **OpenSSL-encrypted** `.tar.enc`).
  */
 class RootBackupInteropManager(
     private val context: Context,
@@ -37,8 +37,10 @@ class RootBackupInteropManager(
     fun createBackupArchives(request: RootBackupRequest): RootBackupPlanResult {
         val shellUserId = userIdFromUid(Process.myUid())
         val packageName = request.packageName
+        val encrypt = request.encryptArchives
+        val password = request.encryptionPassword
 
-        if (request.encryptArchives && request.encryptionPassword.isNullOrBlank()) {
+        if (encrypt && password.isNullOrBlank()) {
             throw IllegalStateException(
                 "Encryption is on but no registration password is set. Save a password in Settings first."
             )
@@ -81,43 +83,58 @@ class RootBackupInteropManager(
         val obbRoot = "/data/media/$pathUserId/Android/obb"
         val mediaRoot = "/data/media/$pathUserId/Android/media"
 
-        val apk = zipApkIfInstalled(packageName, BackupInteropLayout.apkZip(packageDir))
-        val userCe = zipInternalOrExternalData(
+        val apk = tarApkIfInstalled(
+            packageName,
+            BackupInteropLayout.apkPartForWrite(packageDir, encrypt),
+            encrypt,
+            password
+        )
+        val userCe = tarInternalOrExternalData(
             parentDir = File(userCePath).parent ?: "/data/user/$pathUserId",
             dirEntry = packageName,
             physicalPathForTest = userCePath,
-            destinationZip = BackupInteropLayout.userCeZip(packageDir),
-            excludes = internalInteropExcludes(packageName)
+            destinationArchive = BackupInteropLayout.userCePartForWrite(packageDir, encrypt),
+            excludes = internalInteropExcludes(packageName),
+            encrypt = encrypt,
+            password = password
         )
         val userDe = userDePath?.let { de ->
-            zipInternalOrExternalData(
+            tarInternalOrExternalData(
                 parentDir = File(de).parent ?: "/data/user_de/$pathUserId",
                 dirEntry = packageName,
                 physicalPathForTest = de,
-                destinationZip = BackupInteropLayout.userDeZip(packageDir),
-                excludes = internalInteropExcludes(packageName)
+                destinationArchive = BackupInteropLayout.userDePartForWrite(packageDir, encrypt),
+                excludes = internalInteropExcludes(packageName),
+                encrypt = encrypt,
+                password = password
             )
         } ?: false
-        val extData = zipInternalOrExternalData(
+        val extData = tarInternalOrExternalData(
             parentDir = extRoot,
             dirEntry = packageName,
             physicalPathForTest = "$extRoot/$packageName",
-            destinationZip = BackupInteropLayout.extDataZip(packageDir),
-            excludes = externalScopedBackupExcludes(packageName)
+            destinationArchive = BackupInteropLayout.extDataPartForWrite(packageDir, encrypt),
+            excludes = externalScopedBackupExcludes(packageName),
+            encrypt = encrypt,
+            password = password
         )
-        val obb = zipInternalOrExternalData(
+        val obb = tarInternalOrExternalData(
             parentDir = obbRoot,
             dirEntry = packageName,
             physicalPathForTest = "$obbRoot/$packageName",
-            destinationZip = BackupInteropLayout.obbZip(packageDir),
-            excludes = externalScopedBackupExcludes(packageName)
+            destinationArchive = BackupInteropLayout.obbPartForWrite(packageDir, encrypt),
+            excludes = externalScopedBackupExcludes(packageName),
+            encrypt = encrypt,
+            password = password
         )
-        val media = zipInternalOrExternalData(
+        val media = tarInternalOrExternalData(
             parentDir = mediaRoot,
             dirEntry = packageName,
             physicalPathForTest = "$mediaRoot/$packageName",
-            destinationZip = BackupInteropLayout.mediaZip(packageDir),
-            excludes = externalScopedBackupExcludes(packageName)
+            destinationArchive = BackupInteropLayout.mediaPartForWrite(packageDir, encrypt),
+            excludes = externalScopedBackupExcludes(packageName),
+            encrypt = encrypt,
+            password = password
         )
 
         val flags = BackupPartFlags(
@@ -131,49 +148,28 @@ class RootBackupInteropManager(
 
         if (isDirectory(userCePath) && !userCe) {
             throw IllegalStateException(
-                "CE backup failed (user.zip) for $packageName at $userCePath. See logcat tag $TAG."
+                "CE backup failed (user.tar) for $packageName at $userCePath. See logcat tag $TAG."
             )
         }
         if (userDePath != null && isDirectory(userDePath) && !userDe) {
             throw IllegalStateException(
-                "DE backup failed (user_de.zip) for $packageName at $userDePath. See logcat tag $TAG."
+                "DE backup failed (user_de.tar) for $packageName at $userDePath. See logcat tag $TAG."
             )
         }
 
         Log.i(TAG, "$packageName ce=$userCePath parts apk=$apk user=$userCe userDe=$userDe ext=$extData obb=$obb media=$media")
 
-        if (request.encryptArchives) {
-            maybeEncryptInteropArchives(packageDir, request.encryptionPassword!!)
-        }
-
         val configFile = configWriter.write(
             packageName = packageName,
             packageDir = packageDir,
-            partFlags = flags
+            partFlags = flags,
+            useOpensslTarEnc = encrypt
         )
         return RootBackupPlanResult(
             packageDir = packageDir,
             configFile = configFile,
             partFlags = flags
         )
-    }
-
-    private fun maybeEncryptInteropArchives(packageDir: File, password: String) {
-        val zips = listOf(
-            BackupInteropLayout.apkZip(packageDir),
-            BackupInteropLayout.userCeZip(packageDir),
-            BackupInteropLayout.userDeZip(packageDir),
-            BackupInteropLayout.extDataZip(packageDir),
-            BackupInteropLayout.obbZip(packageDir),
-            BackupInteropLayout.mediaZip(packageDir)
-        )
-        for (z in zips) {
-            if (!z.isFile) continue
-            if (Tbk1Codec.isTbk1(z)) continue
-            if (!Tbk1Codec.encryptInPlace(z, password)) {
-                throw IllegalStateException("TBK1 encryption failed for ${z.name}")
-            }
-        }
     }
 
     private fun internalInteropExcludes(packageName: String): List<String> =
@@ -191,14 +187,16 @@ class RootBackupInteropManager(
             "$packageName/Backup_*"
         )
 
-    private fun zipInternalOrExternalData(
+    private fun tarInternalOrExternalData(
         parentDir: String,
         dirEntry: String,
         physicalPathForTest: String,
-        destinationZip: File,
-        excludes: List<String>
+        destinationArchive: File,
+        excludes: List<String>,
+        encrypt: Boolean,
+        password: String?
     ): Boolean {
-        val label = destinationZip.name
+        val label = destinationArchive.name
         if (!isDirectory(physicalPathForTest)) {
             Log.w(TAG, "$label skip: not a dir $physicalPathForTest")
             return false
@@ -225,14 +223,44 @@ class RootBackupInteropManager(
             Log.e(TAG, "$label chown failed ${appOwnerSpec()} $stagingPath")
             return false
         }
+
+        val plainTar = File(context.cacheDir, "tb_part_${UUID.randomUUID()}.tar")
         return try {
-            JvmZip.zipDirectory(staging, destinationZip)
-            destinationZip.isFile && destinationZip.canRead()
+            destinationArchive.parentFile?.mkdirs()
+            if (!TarArchive.createFromDirectory(staging, plainTar)) {
+                Log.e(TAG, "$label tar create failed")
+                false
+            } else if (encrypt) {
+                val r = privilegedOperations.encryptArchive(
+                    plainTar.absolutePath,
+                    destinationArchive.absolutePath,
+                    password!!
+                )
+                if (!r.isSuccess) {
+                    Log.e(TAG, "$label openssl enc failed exit=${r.exitCode} ${r.output.take(400)}")
+                    destinationArchive.delete()
+                    false
+                } else {
+                    destinationArchive.isFile && destinationArchive.canRead()
+                }
+            } else {
+                val ok = if (plainTar.renameTo(destinationArchive)) {
+                    true
+                } else {
+                    plainTar.inputStream().use { ins ->
+                        destinationArchive.outputStream().use { outs -> ins.copyTo(outs) }
+                    }
+                    plainTar.delete()
+                    destinationArchive.isFile && destinationArchive.canRead()
+                }
+                ok
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "$label zip failed", e)
-            destinationZip.delete()
+            Log.e(TAG, "$label archive failed", e)
+            destinationArchive.delete()
             false
         } finally {
+            if (plainTar.exists()) plainTar.delete()
             privilegedOperations.removeRecursive(stagingPath)
         }
     }
@@ -248,7 +276,12 @@ class RootBackupInteropManager(
         }
     }
 
-    private fun zipApkIfInstalled(packageName: String, destinationZip: File): Boolean {
+    private fun tarApkIfInstalled(
+        packageName: String,
+        destinationArchive: File,
+        encrypt: Boolean,
+        password: String?
+    ): Boolean {
         val appInfo = runCatching {
             context.packageManager.getApplicationInfo(packageName, 0)
         }.getOrElse {
@@ -280,13 +313,40 @@ class RootBackupInteropManager(
             privilegedOperations.removeRecursive(stagingPath)
             return false
         }
+
+        val plainTar = File(context.cacheDir, "tb_apk_${UUID.randomUUID()}.tar")
         return try {
-            JvmZip.zipDirectory(staging, destinationZip)
-            destinationZip.isFile && destinationZip.canRead()
+            destinationArchive.parentFile?.mkdirs()
+            if (!TarArchive.createFromDirectory(staging, plainTar)) {
+                false
+            } else if (encrypt) {
+                val r = privilegedOperations.encryptArchive(
+                    plainTar.absolutePath,
+                    destinationArchive.absolutePath,
+                    password!!
+                )
+                if (!r.isSuccess) {
+                    destinationArchive.delete()
+                    false
+                } else {
+                    destinationArchive.isFile && destinationArchive.canRead()
+                }
+            } else {
+                if (plainTar.renameTo(destinationArchive)) {
+                    true
+                } else {
+                    plainTar.inputStream().use { ins ->
+                        destinationArchive.outputStream().use { outs -> ins.copyTo(outs) }
+                    }
+                    plainTar.delete()
+                    destinationArchive.isFile && destinationArchive.canRead()
+                }
+            }
         } catch (_: Exception) {
-            destinationZip.delete()
+            destinationArchive.delete()
             false
         } finally {
+            if (plainTar.exists()) plainTar.delete()
             privilegedOperations.removeRecursive(stagingPath)
         }
     }
