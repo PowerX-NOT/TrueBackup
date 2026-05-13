@@ -7,6 +7,7 @@ import android.net.Uri
 import android.provider.Settings
 import android.text.format.DateUtils
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -110,6 +111,8 @@ fun RestoreBackupDetailsScreen(
     val canDelete = remember(jsonRoot, args.backupBasePath, packageDir) {
         jsonRoot != null && LocalBackupDeletion.mayDeleteBackup(args.backupBasePath, packageDir, jsonRoot)
     }
+
+    BackHandler(onBack = onBack)
 
     Column(
         modifier = Modifier

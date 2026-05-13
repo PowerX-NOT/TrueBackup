@@ -131,7 +131,9 @@ fun TrueBackupNavHost(
 
             LaunchedEffect(args) {
                 if (args == null) {
-                    navController.popBackStack()
+                    if (!navController.popBackToRestoreFromBackupDetails()) {
+                        navController.navigateToMainTab(AppDestination.Restore.route)
+                    }
                 }
             }
 
@@ -142,10 +144,16 @@ fun TrueBackupNavHost(
 
             RestoreBackupDetailsScreen(
                 args = args,
-                onBack = { navController.popBackStack() },
+                onBack = {
+                    if (!navController.popBackToRestoreFromBackupDetails()) {
+                        navController.navigateToMainTab(AppDestination.Restore.route)
+                    }
+                },
                 onDeleted = {
                     restoreListVersion++
-                    navController.popBackStack()
+                    if (!navController.popBackToRestoreFromBackupDetails()) {
+                        navController.navigateToMainTab(AppDestination.Restore.route)
+                    }
                 }
             )
         }

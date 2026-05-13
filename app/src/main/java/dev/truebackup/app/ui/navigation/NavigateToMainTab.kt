@@ -40,6 +40,19 @@ fun NavHostController.popBackToRestoreFromProcess(): Boolean {
     )
 }
 
+/**
+ * Closes [AppDestination.RestoreBackupDetails] and returns to the Restore tab list.
+ * Prefer this over a bare [NavController.popBackStack] so we always land on Restore,
+ * not another tab or an inconsistent stack state.
+ */
+fun NavHostController.popBackToRestoreFromBackupDetails(): Boolean {
+    return popBackStack(
+        route = AppDestination.Restore.route,
+        inclusive = false,
+        saveState = false
+    )
+}
+
 /** Closes [AppDestination.ReencryptProcess] and returns to Settings. */
 fun NavHostController.popBackToSettingsFromReencrypt(): Boolean {
     return popBackStack(
