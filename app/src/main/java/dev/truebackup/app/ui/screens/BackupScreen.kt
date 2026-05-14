@@ -72,7 +72,7 @@ fun BackupScreen(onStartBackup: (BackupProcessArgs) -> Unit) {
     val passwordStore = remember(context) { RegistrationPasswordStore(context) }
     val basePath by repo.backupBasePath.collectAsState(initial = null)
 
-    var hasPassword by remember { mutableStateOf(false) }
+    var hasPassword by remember { mutableStateOf<Boolean?>(null) }
     LaunchedEffect(Unit) {
         hasPassword = withContext(Dispatchers.IO) { passwordStore.isConfigured() }
     }
@@ -153,7 +153,7 @@ fun BackupScreen(onStartBackup: (BackupProcessArgs) -> Unit) {
                 style = MaterialTheme.typography.bodyMedium
             )
             Button(
-                enabled = selectedPackages.isNotEmpty() && !basePath.isNullOrBlank() && hasPassword,
+                enabled = selectedPackages.isNotEmpty() && !basePath.isNullOrBlank() && hasPassword == true,
                 onClick = {
                     scope.launch {
                         val ok = withContext(Dispatchers.IO) { passwordStore.isConfigured() }
@@ -185,7 +185,7 @@ fun BackupScreen(onStartBackup: (BackupProcessArgs) -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error
             )
-        } else if (!hasPassword) {
+        } else if (hasPassword == false) {
             Text(
                 text = stringResource(R.string.password_required_hint_short),
                 style = MaterialTheme.typography.bodySmall,
