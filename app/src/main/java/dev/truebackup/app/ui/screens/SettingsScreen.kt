@@ -64,12 +64,15 @@ import dev.truebackup.app.R
 import dev.truebackup.app.backup.BackupOpenSslTarEncTree
 import dev.truebackup.app.root.RootPreflight
 import dev.truebackup.app.root.RootPreflightResult
+import dev.truebackup.app.root.RootShellCoordinator
 import dev.truebackup.app.settings.AppSettingsRepository
 import dev.truebackup.app.settings.PasswordChangeRekeySession
 import dev.truebackup.app.settings.RegistrationPasswordStore
 import dev.truebackup.app.ui.util.resolvePrimaryStoragePathFromTreeUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -97,9 +100,18 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
     var isCheckingRoot by remember { mutableStateOf(true) }
     var rootResult by remember { mutableStateOf<RootPreflightResult?>(null) }
 
-    LaunchedEffect(Unit) {
-        rootResult = withContext(Dispatchers.IO) { preflight.verify() }
-        isCheckingRoot = false
+    val policyGeneration by RootShellCoordinator.policyGeneration.collectAsState()
+    val rootProbeMutex = remember { Mutex() }
+
+    LaunchedEffect(Unit, policyGeneration) {
+        rootProbeMutex.withLock {
+            isCheckingRoot = true
+            try {
+                rootResult = withContext(Dispatchers.IO) { preflight.verify() }
+            } finally {
+                isCheckingRoot = false
+            }
+        }
     }
 
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
@@ -257,9 +269,17 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
             onRecheck = {
                 if (!isCheckingRoot) {
                     scope.launch {
-                        isCheckingRoot = true
-                        rootResult = withContext(Dispatchers.IO) { preflight.verify() }
-                        isCheckingRoot = false
+                        rootProbeMutex.withLock {
+                            isCheckingRoot = true
+                            try {
+                                withContext(Dispatchers.IO) {
+                                    RootShellCoordinator.closeCachedMainShellBlocking()
+                                }
+                                rootResult = withContext(Dispatchers.IO) { preflight.verify() }
+                            } finally {
+                                isCheckingRoot = false
+                            }
+                        }
                     }
                 }
             }
