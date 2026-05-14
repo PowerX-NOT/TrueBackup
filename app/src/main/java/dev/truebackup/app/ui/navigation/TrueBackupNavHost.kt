@@ -11,6 +11,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -18,6 +19,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -102,27 +104,31 @@ fun TrueBackupNavHost(
         popExitTransition = screenPopExitTransition
     ) {
         composable(AppDestination.Backup.route) { backStackEntry ->
-            BackupScreen(
-                onStartBackup = { args ->
-                    // Store on this destination's entry so previousBackStackEntry still has it
-                    // when BackupProcess is shown (avoid currentBackStackEntry races).
-                    backStackEntry.savedStateHandle["backup_process_args"] = args
-                    navController.navigate(AppDestination.BackupProcess.route)
-                }
-            )
+            Box(modifier = Modifier.fillMaxSize().padding(bottom = 80.dp)) {
+                BackupScreen(
+                    onStartBackup = { args ->
+                        // Store on this destination's entry so previousBackStackEntry still has it
+                        // when BackupProcess is shown (avoid currentBackStackEntry races).
+                        backStackEntry.savedStateHandle["backup_process_args"] = args
+                        navController.navigate(AppDestination.BackupProcess.route)
+                    }
+                )
+            }
         }
         composable(AppDestination.Restore.route) { backStackEntry ->
-            RestoreScreen(
-                listRefreshVersion = restoreListVersion,
-                onStartRestore = { args ->
-                    backStackEntry.savedStateHandle["restore_process_args"] = args
-                    navController.navigate(AppDestination.RestoreProcess.route)
-                },
-                onOpenBackupDetails = { detailArgs ->
-                    backStackEntry.savedStateHandle[RestoreNavKeys.BACKUP_DETAIL_ARGS] = detailArgs
-                    navController.navigate(AppDestination.RestoreBackupDetails.route)
-                }
-            )
+            Box(modifier = Modifier.fillMaxSize().padding(bottom = 80.dp)) {
+                RestoreScreen(
+                    listRefreshVersion = restoreListVersion,
+                    onStartRestore = { args ->
+                        backStackEntry.savedStateHandle["restore_process_args"] = args
+                        navController.navigate(AppDestination.RestoreProcess.route)
+                    },
+                    onOpenBackupDetails = { detailArgs ->
+                        backStackEntry.savedStateHandle[RestoreNavKeys.BACKUP_DETAIL_ARGS] = detailArgs
+                        navController.navigate(AppDestination.RestoreBackupDetails.route)
+                    }
+                )
+            }
         }
         composable(AppDestination.RestoreBackupDetails.route) {
             val args = navController.previousBackStackEntry
@@ -158,11 +164,13 @@ fun TrueBackupNavHost(
             )
         }
         composable(AppDestination.Settings.route) {
-            SettingsScreen(
-                onNavigateToReencrypt = {
-                    navController.navigate(AppDestination.ReencryptProcess.route)
-                }
-            )
+            Box(modifier = Modifier.fillMaxSize().padding(bottom = 80.dp)) {
+                SettingsScreen(
+                    onNavigateToReencrypt = {
+                        navController.navigate(AppDestination.ReencryptProcess.route)
+                    }
+                )
+            }
         }
         composable(
             route = AppDestination.BackupProcess.route,

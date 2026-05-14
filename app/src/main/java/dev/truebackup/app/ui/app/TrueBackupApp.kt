@@ -3,8 +3,13 @@ package dev.truebackup.app.ui.app
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -37,8 +42,8 @@ fun TrueBackupApp(modifier: Modifier = Modifier) {
         bottomBar = {
             AnimatedVisibility(
                 visible = showBottomBar,
-                enter = fadeIn(),
-                exit = fadeOut()
+                enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
+                exit = fadeOut() + slideOutVertically(targetOffsetY = { it })
             ) {
                 NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                     items.forEach { destination ->
@@ -60,12 +65,12 @@ fun TrueBackupApp(modifier: Modifier = Modifier) {
                 }
             }
         }
-    ) { innerPadding ->
+    ) { _ ->
         TrueBackupNavHost(
             navController = navController,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .windowInsetsPadding(WindowInsets.systemBars)
         )
     }
 }
