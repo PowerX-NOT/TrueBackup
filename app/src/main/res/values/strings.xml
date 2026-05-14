@@ -25,6 +25,7 @@
     <string name="password_required_for_backup_restore">Register a password in Settings before backing up or restoring.</string>
     <string name="password_required_hint_short">Register a password in Settings to use backup and restore.</string>
     <string name="password_register_requires_backup_folder">Choose a backup folder above before registering a password.</string>
+    <string name="backup_choose_folder_settings_hint">Choose a backup folder in Settings first.</string>
     <string name="reencrypt_back_blocked_toast">Re-encryption in progress. Wait until it finishes.</string>
     <string name="reencrypt_headline_working">Re-encrypting backups…</string>
     <string name="reencrypt_headline_done">Re-encrypt complete</string>

@@ -163,7 +163,7 @@ fun RestoreScreen(
         Spacer(modifier = Modifier.height(12.dp))
         if (basePath.isNullOrBlank()) {
             Text(
-                "Choose a backup folder in Settings first.",
+                text = stringResource(R.string.backup_choose_folder_settings_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error
             )

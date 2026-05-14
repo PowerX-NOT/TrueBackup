@@ -174,8 +174,14 @@ fun BackupScreen(onStartBackup: (BackupProcessArgs) -> Unit) {
             }
         }
 
-        if (!basePath.isNullOrBlank() && !hasPassword) {
-            Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(12.dp))
+        if (basePath.isNullOrBlank()) {
+            Text(
+                text = stringResource(R.string.backup_choose_folder_settings_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        } else if (!hasPassword) {
             Text(
                 text = stringResource(R.string.password_required_hint_short),
                 style = MaterialTheme.typography.bodySmall,
