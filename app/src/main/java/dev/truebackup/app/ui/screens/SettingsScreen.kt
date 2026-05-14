@@ -84,7 +84,7 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
     val preflight = remember { RootPreflight() }
     val backupBasePath by repo.backupBasePath.collectAsState(initial = null)
 
-    var hasRegisteredPassword by remember { mutableStateOf(false) }
+    var hasRegisteredPassword by remember { mutableStateOf<Boolean?>(null) }
     LaunchedEffect(Unit) {
         hasRegisteredPassword = withContext(Dispatchers.IO) { passwordStore.isConfigured() }
     }
@@ -176,18 +176,18 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = if (hasRegisteredPassword) {
-                        stringResource(R.string.password_status_registered)
-                    } else {
-                        stringResource(R.string.password_status_not_registered)
-                    },
+                    text = when (hasRegisteredPassword) {
+                    true  -> stringResource(R.string.password_status_registered)
+                    false -> stringResource(R.string.password_status_not_registered)
+                    null  -> "…"
+                },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(10.dp))
                 val backupFolderPath = backupBasePath?.trim().orEmpty()
                 val backupPathReady = backupFolderPath.isNotEmpty()
-                if (!hasRegisteredPassword) {
+                if (hasRegisteredPassword == false) {
                     if (!backupPathReady) {
                         Text(
                             text = stringResource(R.string.password_register_requires_backup_folder),
@@ -216,7 +216,7 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
                     ) {
                         Text(stringResource(R.string.password_register))
                     }
-                } else {
+                } else if (hasRegisteredPassword == true) {
                     Button(
                         modifier = Modifier.fillMaxWidth(),
                         onClick = {
@@ -500,8 +500,8 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
                                     if (cur != changeOld) {
                                         return@withContext "old"
                                     }
-                                    val base = backupBasePath
-                                    if (BackupOpenSslTarEncTree.hasAnyEncryptedArchives(base)) {
+                                    val base = backupBasePath?.trim()?.takeIf { it.isNotEmpty() }
+                                    if (base != null && BackupOpenSslTarEncTree.hasAnyEncryptedArchives(base)) {
                                         return@withContext "nav_reencrypt"
                                     }
                                     if (!passwordStore.changePlaintext(changeOld, changeNew)) {

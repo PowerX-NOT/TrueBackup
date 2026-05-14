@@ -135,7 +135,6 @@ fun BackupScreen(onStartBackup: (BackupProcessArgs) -> Unit) {
         }
         Spacer(modifier = Modifier.height(12.dp))
 
-
         PillSearchBar(
             query = searchQuery,
             onQueryChange = { searchQuery = it },
