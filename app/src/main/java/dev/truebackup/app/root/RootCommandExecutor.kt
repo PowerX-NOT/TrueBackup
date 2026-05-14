@@ -1,32 +1,40 @@
 package dev.truebackup.app.root
 
+import com.topjohnwu.superuser.NoShellException
+import com.topjohnwu.superuser.Shell
+
 data class RootExecutionResult(
     val exitCode: Int,
     val output: String
 )
 
+/**
+ * Runs privileged shell commands via [topjohnwu libsu](https://github.com/topjohnwu/libsu)
+ * (`Shell.cmd`), using mount-master when the root implementation supports it.
+ */
 class RootCommandExecutor {
-    /** Prefer `su -mm` (mount-master) for Magisk namespace; fall back to `su -c`. */
     fun run(command: String): RootExecutionResult {
-        val withMm = runSu(listOf("su", "-mm", "-c", command))
-        if (withMm.exitCode == 0) return withMm
-        val o = withMm.output.lowercase()
-        val badMm = o.contains("invalid option") ||
-            o.contains("unrecognized option") ||
-            o.contains("illegal option") ||
-            withMm.exitCode == 127
-        return if (badMm) runSu(listOf("su", "-c", command)) else withMm
-    }
-
-    private fun runSu(argv: List<String>): RootExecutionResult {
-        val process = ProcessBuilder(argv)
-            .redirectErrorStream(true)
-            .start()
-        val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
-        val exit = process.waitFor()
-        return RootExecutionResult(
-            exitCode = exit,
-            output = output
-        )
+        return try {
+            val result = Shell.cmd(command).exec()
+            val merged = buildString {
+                for (line in result.out) {
+                    if (isNotEmpty()) append('\n')
+                    append(line)
+                }
+                for (line in result.err) {
+                    if (isNotEmpty()) append('\n')
+                    append(line)
+                }
+            }.trim()
+            RootExecutionResult(
+                exitCode = result.code,
+                output = merged
+            )
+        } catch (e: NoShellException) {
+            RootExecutionResult(
+                exitCode = 127,
+                output = (e.message ?: e.toString()).trim()
+            )
+        }
     }
 }
