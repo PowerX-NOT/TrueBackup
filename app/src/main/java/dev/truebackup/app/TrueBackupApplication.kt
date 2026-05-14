@@ -14,5 +14,10 @@ class TrueBackupApplication : Application() {
                 .setFlags(Shell.FLAG_MOUNT_MASTER)
                 .setTimeout(120)
         )
+        // Pre-warm the root shell in the background so the splash screen doesn't block
+        // waiting for the first su handshake.
+        Thread {
+            Shell.getCachedShell()
+        }.start()
     }
 }

@@ -52,7 +52,9 @@ private data class PermissionStatus(
 @Composable
 fun PermissionGateApp() {
     val context = LocalContext.current
-    var status by remember { mutableStateOf(currentPermissionStatus(context)) }
+    // Start null so the first frame renders instantly (splash dismissed immediately).
+    // The real check runs on IO inside LaunchedEffect.
+    var status by remember { mutableStateOf<PermissionStatus?>(null) }
     var permissionMessage by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
@@ -71,11 +73,12 @@ fun PermissionGateApp() {
     }
 
     fun requestMissingPermissions() {
-        if (status.missingRuntimePermissions.isNotEmpty()) {
-            runtimePermissionLauncher.launch(status.missingRuntimePermissions.toTypedArray())
+        val s = status ?: return
+        if (s.missingRuntimePermissions.isNotEmpty()) {
+            runtimePermissionLauncher.launch(s.missingRuntimePermissions.toTypedArray())
             return
         }
-        if (!status.needsAllFilesAccess) return
+        if (!s.needsAllFilesAccess) return
 
         permissionMessage = null
         val appSpecificIntent = Intent(
@@ -97,8 +100,13 @@ fun PermissionGateApp() {
     }
 
     Scaffold { innerPadding ->
+        val currentStatus = status
+        // Don't render anything until the permission check resolves —
+        // this lets the OS splash screen dismiss on the very first frame.
+        if (currentStatus == null) return@Scaffold
+
         AnimatedContent(
-            targetState = status.allGranted,
+            targetState = currentStatus.allGranted,
             transitionSpec = {
                 // Entering the app: fade in + subtle scale up from 92%
                 (fadeIn(animationSpec = tween(400)) +
@@ -119,8 +127,8 @@ fun PermissionGateApp() {
                         .fillMaxSize()
                         .padding(innerPadding)
                         .padding(20.dp),
-                    missingRuntimePermissions = status.missingRuntimePermissions,
-                    needsAllFilesAccess = status.needsAllFilesAccess,
+                    missingRuntimePermissions = currentStatus.missingRuntimePermissions,
+                    needsAllFilesAccess = currentStatus.needsAllFilesAccess,
                     onRequest = ::requestMissingPermissions,
                     message = permissionMessage
                 )
