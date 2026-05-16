@@ -4,10 +4,12 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.pm.ApplicationInfo
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.RemoteException
+import com.topjohnwu.superuser.Shell
 import com.topjohnwu.superuser.ipc.RootService
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -19,6 +21,11 @@ import java.util.concurrent.atomic.AtomicReference
  * The daemon outlives the UI process. Bind only when a command runs (never on app launch),
  * so Magisk is not notified on every open—only when the daemon is first created at setup.
  */
+data class RootExecutionResult(
+    val exitCode: Int,
+    val output: String
+)
+
 object RootShellClient {
 
     private lateinit var appContext: Context
@@ -28,6 +35,14 @@ object RootShellClient {
 
     fun init(context: Context) {
         appContext = context.applicationContext
+        val debuggable =
+            (appContext.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        Shell.enableVerboseLogging = debuggable
+        Shell.setDefaultBuilder(
+            Shell.Builder.create()
+                .setFlags(Shell.FLAG_MOUNT_MASTER)
+                .setTimeout(120)
+        )
     }
 
     fun execute(command: String): RootExecutionResult {

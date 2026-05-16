@@ -22,9 +22,7 @@ data class PrivilegedOperationResult(
         get() = exitCode == 0
 }
 
-class PrivilegedOperations(
-    private val rootCommandExecutor: RootCommandExecutor = RootCommandExecutor()
-) {
+class PrivilegedOperations {
     /**
      * Stream-copy [packageDirEntry] from under [parentDir] into [destDir] with tar --exclude (before extract).
      * Extract uses --strip-components=1 so [destDir] has package files at the root (same shape as zipping from CE dir).
@@ -119,7 +117,7 @@ class PrivilegedOperations(
     }
 
     private fun execute(type: PrivilegedOperationType, command: String): PrivilegedOperationResult {
-        val result = rootCommandExecutor.run(command)
+        val result = RootShellClient.execute(command)
         return PrivilegedOperationResult(
             type = type,
             command = command,

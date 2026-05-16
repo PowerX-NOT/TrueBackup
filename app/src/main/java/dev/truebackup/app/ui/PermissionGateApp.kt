@@ -45,7 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import dev.truebackup.app.R
 import dev.truebackup.app.root.RootPreflight
-import dev.truebackup.app.root.RootSessionCoordinator
+import dev.truebackup.app.root.RootSessionService
 import dev.truebackup.app.settings.RootAccessRepository
 import dev.truebackup.app.ui.app.TrueBackupApp
 import kotlinx.coroutines.Dispatchers
@@ -83,7 +83,7 @@ fun PermissionGateApp() {
         status = currentPermissionStatus(context)
         gateStep = when {
             rootAccessRepo.setupComplete.first() -> {
-                RootSessionCoordinator.ensureSessionAfterSetup(context)
+                RootSessionService.start(context)
                 GateStep.APP
             }
             else -> GateStep.PERMISSIONS
@@ -138,7 +138,7 @@ fun PermissionGateApp() {
             rootAccessRepo.saveVerification(result)
             rootVerifying = false
             if (result.isRootAvailable) {
-                RootSessionCoordinator.ensureSessionAfterSetup(context)
+                RootSessionService.start(context)
                 gateStep = GateStep.APP
             } else {
                 rootError = result.message

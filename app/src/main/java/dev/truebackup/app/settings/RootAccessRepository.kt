@@ -17,7 +17,6 @@ class RootAccessRepository(
     private val keySetupComplete = booleanPreferencesKey("root_setup_complete")
     private val keyLastAvailable = booleanPreferencesKey("root_last_available")
     private val keyLastMessage = stringPreferencesKey("root_last_message")
-    private val keyLastOutput = stringPreferencesKey("root_last_output")
 
     val setupComplete: Flow<Boolean> =
         context.rootAccessDataStore.data.map { it[keySetupComplete] == true }
@@ -27,8 +26,7 @@ class RootAccessRepository(
             if (prefs[keySetupComplete] != true) return@map null
             RootPreflightResult(
                 isRootAvailable = prefs[keyLastAvailable] == true,
-                message = prefs[keyLastMessage].orEmpty(),
-                output = prefs[keyLastOutput].orEmpty()
+                message = prefs[keyLastMessage].orEmpty()
             )
         }
 
@@ -37,7 +35,6 @@ class RootAccessRepository(
             prefs[keySetupComplete] = true
             prefs[keyLastAvailable] = result.isRootAvailable
             prefs[keyLastMessage] = result.message
-            prefs[keyLastOutput] = result.output
         }
     }
 }

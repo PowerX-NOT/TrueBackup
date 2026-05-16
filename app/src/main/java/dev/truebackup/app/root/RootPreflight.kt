@@ -2,23 +2,19 @@ package dev.truebackup.app.root
 
 data class RootPreflightResult(
     val isRootAvailable: Boolean,
-    val message: String,
-    val output: String
+    val message: String
 )
 
-class RootPreflight(
-    private val executor: RootCommandExecutor = RootCommandExecutor()
-) {
+class RootPreflight {
     fun verify(): RootPreflightResult {
         return runCatching {
-            val result = executor.run("id -u")
+            val result = RootShellClient.execute("id -u")
             val uidLine = result.output.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }.orEmpty()
             val isRoot = result.exitCode == 0 && uidLine == "0"
             if (isRoot) {
                 RootPreflightResult(
                     isRootAvailable = true,
-                    message = "Root access available.",
-                    output = uidLine.ifEmpty { result.output }
+                    message = "Root access available."
                 )
             } else {
                 val detail = when {
@@ -26,17 +22,16 @@ class RootPreflight(
                     uidLine.isEmpty() -> "empty output"
                     else -> "uid=$uidLine"
                 }
+                val extra = if (result.output.isBlank()) detail else "${result.output.trim()} ($detail)"
                 RootPreflightResult(
                     isRootAvailable = false,
-                    message = "Root is not available (or Magisk denied this app).",
-                    output = if (result.output.isBlank()) detail else "${result.output.trim()} ($detail)"
+                    message = "Root is not available (or Magisk denied this app). $extra"
                 )
             }
         }.getOrElse { error ->
             RootPreflightResult(
                 isRootAvailable = false,
-                message = "Root check failed: ${error.message ?: "unknown error"}",
-                output = ""
+                message = "Root check failed: ${error.message ?: "unknown error"}"
             )
         }
     }
