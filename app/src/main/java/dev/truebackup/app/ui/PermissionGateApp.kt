@@ -276,8 +276,11 @@ private fun PermissionRequiredScreen(
                 if (missingRuntimePermissions.isNotEmpty()) {
                     Text("Missing runtime permissions", style = MaterialTheme.typography.titleMedium)
                     Spacer(modifier = Modifier.height(6.dp))
-                    missingRuntimePermissions.forEach {
-                        Text("• $it", style = MaterialTheme.typography.bodySmall)
+                    missingRuntimePermissions.forEach { permission ->
+                        Text(
+                            "• ${runtimePermissionLabel(permission)}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
                 }
                 if (needsAllFilesAccess) {
@@ -300,6 +303,14 @@ private fun PermissionRequiredScreen(
     }
 }
 
+@Composable
+private fun runtimePermissionLabel(permission: String): String = when (permission) {
+    Manifest.permission.POST_NOTIFICATIONS -> stringResource(R.string.permission_notifications)
+    Manifest.permission.READ_EXTERNAL_STORAGE -> stringResource(R.string.permission_read_storage)
+    Manifest.permission.WRITE_EXTERNAL_STORAGE -> stringResource(R.string.permission_write_storage)
+    else -> permission
+}
+
 private fun currentPermissionStatus(context: Context): PermissionStatus {
     val needed = mutableListOf<String>()
     if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2 &&
@@ -313,6 +324,12 @@ private fun currentPermissionStatus(context: Context): PermissionStatus {
         PackageManager.PERMISSION_GRANTED
     ) {
         needed += Manifest.permission.WRITE_EXTERNAL_STORAGE
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+        PackageManager.PERMISSION_GRANTED
+    ) {
+        needed += Manifest.permission.POST_NOTIFICATIONS
     }
     val allFiles = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()
     return PermissionStatus(

@@ -51,6 +51,9 @@
     <string name="root_setup_body">TrueBackup needs root for backup and restore. Grant access when Magisk asks — this usually happens only once.</string>
     <string name="root_setup_hint">If you previously denied access, open Magisk → Superuser → TrueBackup and allow root, then tap Verify below.</string>
     <string name="root_setup_verify">Verify root access</string>
+    <string name="permission_notifications">Notifications (backup and restore progress)</string>
+    <string name="permission_read_storage">Read storage</string>
+    <string name="permission_write_storage">Write storage</string>
 
     <string name="backup_detail_title">Backup details</string>
     <string name="backup_detail_navigate_up">Back</string>
