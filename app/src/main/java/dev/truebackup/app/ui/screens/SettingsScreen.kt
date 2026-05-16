@@ -64,7 +64,9 @@ import dev.truebackup.app.R
 import dev.truebackup.app.backup.BackupOpenSslTarEncTree
 import dev.truebackup.app.root.RootPreflight
 import dev.truebackup.app.root.RootPreflightResult
-import dev.truebackup.app.root.RootShellCoordinator
+import dev.truebackup.app.root.RootSessionCoordinator
+import dev.truebackup.app.root.RootShellClient
+import dev.truebackup.app.settings.RootAccessRepository
 import dev.truebackup.app.settings.AppSettingsRepository
 import dev.truebackup.app.settings.PasswordChangeRekeySession
 import dev.truebackup.app.settings.RegistrationPasswordStore
@@ -81,7 +83,9 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
     val repo = remember(context) { AppSettingsRepository(context) }
     val passwordStore = remember(context) { RegistrationPasswordStore(context) }
+    val rootAccessRepo = remember(context) { RootAccessRepository(context) }
     val preflight = remember { RootPreflight() }
+    val cachedRootResult by rootAccessRepo.cachedResult.collectAsState(initial = null)
     val backupBasePath by repo.backupBasePath.collectAsState(initial = null)
 
     var hasRegisteredPassword by remember { mutableStateOf<Boolean?>(null) }
@@ -97,20 +101,14 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
     var passwordPolicyError by remember { mutableStateOf<String?>(null) }
     var showRegisterPasswordDialog by remember { mutableStateOf(false) }
     var showChangePasswordDialog by remember { mutableStateOf(false) }
-    var isCheckingRoot by remember { mutableStateOf(true) }
+    var isCheckingRoot by remember { mutableStateOf(false) }
     var rootResult by remember { mutableStateOf<RootPreflightResult?>(null) }
 
-    val policyGeneration by RootShellCoordinator.policyGeneration.collectAsState()
     val rootProbeMutex = remember { Mutex() }
 
-    LaunchedEffect(Unit, policyGeneration) {
-        rootProbeMutex.withLock {
-            isCheckingRoot = true
-            try {
-                rootResult = withContext(Dispatchers.IO) { preflight.verify() }
-            } finally {
-                isCheckingRoot = false
-            }
+    LaunchedEffect(cachedRootResult) {
+        if (!isCheckingRoot) {
+            rootResult = cachedRootResult
         }
     }
 
@@ -272,10 +270,17 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
                         rootProbeMutex.withLock {
                             isCheckingRoot = true
                             try {
-                                withContext(Dispatchers.IO) {
-                                    RootShellCoordinator.closeCachedMainShellBlocking()
+                                val result = withContext(Dispatchers.IO) {
+                                    RootSessionCoordinator.stopSession(context)
+                                    RootShellClient.stopDaemon()
+                                    preflight.verify().also { verified ->
+                                        rootAccessRepo.saveVerification(verified)
+                                        if (verified.isRootAvailable) {
+                                            RootSessionCoordinator.ensureSessionAfterSetup(context)
+                                        }
+                                    }
                                 }
-                                rootResult = withContext(Dispatchers.IO) { preflight.verify() }
+                                rootResult = result
                             } finally {
                                 isCheckingRoot = false
                             }

@@ -47,6 +47,14 @@
     <string name="root_status_ready_caption">This device can run privileged backup and restore commands.</string>
     <string name="root_status_unavailable_title">Root not available</string>
     <string name="root_status_check_again">Check again</string>
+    <string name="root_setup_title">Root access</string>
+    <string name="root_setup_body">TrueBackup needs root for backup and restore. Grant access when Magisk asks — this usually happens only once.</string>
+    <string name="root_setup_hint">If you previously denied access, open Magisk → Superuser → TrueBackup and allow root, then tap Verify below.</string>
+    <string name="root_setup_verify">Verify root access</string>
+    <string name="root_session_channel_name">Root session</string>
+    <string name="root_session_channel_desc">Keeps the root helper ready for backup and restore without repeated Magisk prompts.</string>
+    <string name="root_session_notification_title">TrueBackup root ready</string>
+    <string name="root_session_notification_text">Backup and restore can run without asking Magisk again.</string>
 
     <string name="backup_detail_title">Backup details</string>
     <string name="backup_detail_navigate_up">Back</string>

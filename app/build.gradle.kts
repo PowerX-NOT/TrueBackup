@@ -36,6 +36,7 @@ android {
     }
     buildFeatures {
         compose = true
+        aidl = true
     }
 }
 
@@ -43,7 +44,6 @@ dependencies {
 
     implementation(libs.libsu.core)
     implementation(libs.libsu.service)
-    implementation(libs.libsu.nio)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
