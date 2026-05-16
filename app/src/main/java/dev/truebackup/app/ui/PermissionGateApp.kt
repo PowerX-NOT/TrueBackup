@@ -45,7 +45,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import dev.truebackup.app.R
 import dev.truebackup.app.root.RootPreflight
-import dev.truebackup.app.root.RootSessionService
 import dev.truebackup.app.settings.RootAccessRepository
 import dev.truebackup.app.ui.app.TrueBackupApp
 import kotlinx.coroutines.Dispatchers
@@ -82,10 +81,7 @@ fun PermissionGateApp() {
     LaunchedEffect(Unit) {
         status = currentPermissionStatus(context)
         gateStep = when {
-            rootAccessRepo.setupComplete.first() -> {
-                RootSessionService.start(context)
-                GateStep.APP
-            }
+            rootAccessRepo.setupComplete.first() -> GateStep.APP
             else -> GateStep.PERMISSIONS
         }
     }
@@ -138,7 +134,6 @@ fun PermissionGateApp() {
             rootAccessRepo.saveVerification(result)
             rootVerifying = false
             if (result.isRootAvailable) {
-                RootSessionService.start(context)
                 gateStep = GateStep.APP
             } else {
                 rootError = result.message
@@ -318,12 +313,6 @@ private fun currentPermissionStatus(context: Context): PermissionStatus {
         PackageManager.PERMISSION_GRANTED
     ) {
         needed += Manifest.permission.WRITE_EXTERNAL_STORAGE
-    }
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
-        PackageManager.PERMISSION_GRANTED
-    ) {
-        needed += Manifest.permission.POST_NOTIFICATIONS
     }
     val allFiles = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()
     return PermissionStatus(

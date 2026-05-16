@@ -64,7 +64,6 @@ import dev.truebackup.app.R
 import dev.truebackup.app.backup.BackupOpenSslTarEncTree
 import dev.truebackup.app.root.RootPreflight
 import dev.truebackup.app.root.RootPreflightResult
-import dev.truebackup.app.root.RootSessionService
 import dev.truebackup.app.root.RootShellClient
 import dev.truebackup.app.settings.RootAccessRepository
 import dev.truebackup.app.settings.AppSettingsRepository
@@ -271,13 +270,9 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
                             isCheckingRoot = true
                             try {
                                 val result = withContext(Dispatchers.IO) {
-                                    RootSessionService.stop(context)
                                     RootShellClient.stopDaemon()
                                     preflight.verify().also { verified ->
                                         rootAccessRepo.saveVerification(verified)
-                                        if (verified.isRootAvailable) {
-                                            RootSessionService.start(context)
-                                        }
                                     }
                                 }
                                 rootResult = result
