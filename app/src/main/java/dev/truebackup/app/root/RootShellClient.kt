@@ -69,12 +69,25 @@ object RootShellClient {
         }
     }
 
-    /** Stops the persistent daemon; only for Settings → “Check again”. */
+    /** Stops the persistent daemon and drops any cached main shell before a fresh access check. */
+    fun prepareForAccessCheck() {
+        stopDaemon()
+        invalidateCachedShell()
+    }
+
+    /** Stops the persistent daemon. */
     fun stopDaemon() {
         runOnMainThread {
             connection?.let { RootService.unbind(it) }
             invalidate()
             RootService.stopOrTask(daemonIntent())
+        }
+    }
+
+    /** Closes libsu's cached main shell so Magisk revoke is detected on the next command. */
+    fun invalidateCachedShell() {
+        runCatching {
+            Shell.getCachedShell()?.takeIf { it.isAlive }?.close()
         }
     }
 

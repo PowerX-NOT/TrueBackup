@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import dev.truebackup.app.ui.RootAccessLifecycleEffect
 import dev.truebackup.app.ui.navigation.AppDestination
 import dev.truebackup.app.ui.navigation.TrueBackupNavHost
 import dev.truebackup.app.ui.navigation.navigateToMainTab
@@ -36,6 +37,8 @@ fun TrueBackupApp(modifier: Modifier = Modifier) {
         currentRoute != AppDestination.RestoreProcess.route &&
         currentRoute != AppDestination.ReencryptProcess.route &&
         currentRoute != AppDestination.RestoreBackupDetails.route
+
+    RootAccessLifecycleEffect()
 
     Scaffold(
         modifier = modifier.fillMaxSize(),

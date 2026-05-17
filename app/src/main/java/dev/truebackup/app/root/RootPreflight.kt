@@ -9,8 +9,12 @@ data class RootPreflightResult(
 )
 
 class RootPreflight {
-    fun verify(): RootPreflightResult {
-        if (Shell.isAppGrantedRoot() == false) {
+    /**
+     * @param forceFresh When true, always run `id -u` (caller should have called
+     * [RootShellClient.prepareForAccessCheck] first). Skips the fast "no su binary" shortcut.
+     */
+    fun verify(forceFresh: Boolean = false): RootPreflightResult {
+        if (!forceFresh && Shell.isAppGrantedRoot() == false) {
             return RootPreflightResult(
                 isRootAvailable = false,
                 message = "Root is not available on this device."

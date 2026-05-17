@@ -62,9 +62,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.truebackup.app.R
 import dev.truebackup.app.backup.BackupOpenSslTarEncTree
-import dev.truebackup.app.root.RootPreflight
+import dev.truebackup.app.root.RootAccessProbe
 import dev.truebackup.app.root.RootPreflightResult
-import dev.truebackup.app.root.RootShellClient
 import dev.truebackup.app.settings.RootAccessRepository
 import dev.truebackup.app.settings.AppSettingsRepository
 import dev.truebackup.app.settings.PasswordChangeRekeySession
@@ -83,7 +82,6 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
     val repo = remember(context) { AppSettingsRepository(context) }
     val passwordStore = remember(context) { RegistrationPasswordStore(context) }
     val rootAccessRepo = remember(context) { RootAccessRepository(context) }
-    val preflight = remember { RootPreflight() }
     val cachedRootResult by rootAccessRepo.cachedResult.collectAsState(initial = null)
     val backupBasePath by repo.backupBasePath.collectAsState(initial = null)
 
@@ -269,12 +267,7 @@ fun SettingsScreen(onNavigateToReencrypt: () -> Unit = {}) {
                         rootProbeMutex.withLock {
                             isCheckingRoot = true
                             try {
-                                val result = withContext(Dispatchers.IO) {
-                                    RootShellClient.stopDaemon()
-                                    preflight.verify().also { verified ->
-                                        rootAccessRepo.saveVerification(verified)
-                                    }
-                                }
+                                val result = RootAccessProbe.probeAndPersist(rootAccessRepo)
                                 rootResult = result
                             } finally {
                                 isCheckingRoot = false
