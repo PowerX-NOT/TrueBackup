@@ -2,18 +2,7 @@ package dev.truebackup.app.root
 
 import dev.truebackup.app.crypto.OpenSslEncCompat
 
-enum class PrivilegedOperationType {
-    TAR_COPY,
-    CHOWN_RECURSIVE,
-    RELABEL_SELINUX,
-    INSTALL_APK,
-    ENCRYPT_ARCHIVE,
-    DECRYPT_ARCHIVE,
-    CUSTOM
-}
-
 data class PrivilegedOperationResult(
-    val type: PrivilegedOperationType,
     val command: String,
     val exitCode: Int,
     val output: String
@@ -42,33 +31,27 @@ class PrivilegedOperations {
         }
         val command =
             "mkdir -p '$d' && tar -cf - $exClause -C '$p' '$pkg' | tar -xf - --strip-components=1 -C '$d' && chmod -R a+rX '$d'"
-        return execute(PrivilegedOperationType.TAR_COPY, command)
+        return execute(command)
     }
 
     fun removeRecursive(path: String): PrivilegedOperationResult {
         return runCustom("rm -rf '${escapeSingleQuotes(path)}'")
     }
 
-    fun chownRecursive(ownerGroup: String, targetPath: String): PrivilegedOperationResult {
-        val command = "chown -R ${escapeSingleQuotes(ownerGroup)} '${escapeSingleQuotes(targetPath)}'"
-        return execute(PrivilegedOperationType.CHOWN_RECURSIVE, command)
-    }
-
     fun relabelSelinuxRecursive(targetPath: String): PrivilegedOperationResult {
         val command = "restorecon -R '${escapeSingleQuotes(targetPath)}'"
-        return execute(PrivilegedOperationType.RELABEL_SELINUX, command)
+        return execute(command)
     }
 
     fun installApk(apkPath: String): PrivilegedOperationResult {
         val command = "pm install -r '${escapeSingleQuotes(apkPath)}'"
-        return execute(PrivilegedOperationType.INSTALL_APK, command)
+        return execute(command)
     }
 
     fun encryptArchive(inputPath: String, outputPath: String, passphrase: String): PrivilegedOperationResult {
         val command = "internal:OpenSslEncCompat.encryptFile"
         val ok = OpenSslEncCompat.encryptFile(inputPath, outputPath, passphrase)
         return PrivilegedOperationResult(
-            type = PrivilegedOperationType.ENCRYPT_ARCHIVE,
             command = command,
             exitCode = if (ok) 0 else 1,
             output = if (ok) "" else "OpenSslEncCompat.encryptFile failed"
@@ -79,7 +62,6 @@ class PrivilegedOperations {
         val command = "internal:OpenSslEncCompat.decryptFile"
         val ok = OpenSslEncCompat.decryptFile(inputPath, outputPath, passphrase)
         return PrivilegedOperationResult(
-            type = PrivilegedOperationType.DECRYPT_ARCHIVE,
             command = command,
             exitCode = if (ok) 0 else 1,
             output = if (ok) "" else "OpenSslEncCompat.decryptFile failed"
@@ -93,7 +75,6 @@ class PrivilegedOperations {
         val command = "internal:OpenSslEncCompat.rekeyFileInPlace"
         val ok = OpenSslEncCompat.rekeyFileInPlace(absPath, oldPassphrase, newPassphrase)
         return PrivilegedOperationResult(
-            type = PrivilegedOperationType.CUSTOM,
             command = command,
             exitCode = if (ok) 0 else 1,
             output = if (ok) "" else "OpenSslEncCompat.rekeyFileInPlace failed"
@@ -105,7 +86,6 @@ class PrivilegedOperations {
         val command = "internal:OpenSslEncCompat.decryptProbe"
         val ok = OpenSslEncCompat.decryptProbe(inputPath, passphrase)
         return PrivilegedOperationResult(
-            type = PrivilegedOperationType.CUSTOM,
             command = command,
             exitCode = if (ok) 0 else 1,
             output = if (ok) "" else "OpenSslEncCompat.decryptProbe failed"
@@ -113,13 +93,12 @@ class PrivilegedOperations {
     }
 
     fun runCustom(command: String): PrivilegedOperationResult {
-        return execute(PrivilegedOperationType.CUSTOM, command)
+        return execute(command)
     }
 
-    private fun execute(type: PrivilegedOperationType, command: String): PrivilegedOperationResult {
+    private fun execute(command: String): PrivilegedOperationResult {
         val result = RootShellClient.execute(command)
         return PrivilegedOperationResult(
-            type = type,
             command = command,
             exitCode = result.exitCode,
             output = result.output
