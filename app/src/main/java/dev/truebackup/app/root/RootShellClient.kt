@@ -9,10 +9,12 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.RemoteException
+import com.topjohnwu.superuser.NoShellException
 import com.topjohnwu.superuser.Shell
 import com.topjohnwu.superuser.ipc.RootService
+import java.io.IOException
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -30,6 +32,7 @@ object RootShellClient {
 
     private lateinit var appContext: Context
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val mainExecutor = Executor { command -> mainHandler.post(command) }
     private var service: IRootCommandService? = null
     private var connection: ServiceConnection? = null
 
@@ -41,7 +44,6 @@ object RootShellClient {
         Shell.setDefaultBuilder(
             Shell.Builder.create()
                 .setFlags(Shell.FLAG_MOUNT_MASTER)
-                .setTimeout(120)
         )
     }
 
@@ -56,13 +58,13 @@ object RootShellClient {
             invalidate()
             RootExecutionResult(
                 exitCode = 127,
-                output = (e.message ?: e.toString()).trim()
+                output = rootFailureOutput(e)
             )
         } catch (e: Exception) {
             invalidate()
             RootExecutionResult(
                 exitCode = 127,
-                output = (e.message ?: e.toString()).trim()
+                output = rootFailureOutput(e)
             )
         }
     }
@@ -96,6 +98,13 @@ object RootShellClient {
                     return@runOnMainThread
                 }
                 invalidate()
+
+                if (Shell.isAppGrantedRoot() == false) {
+                    error.set(rootUnavailableException())
+                    latch.countDown()
+                    return@runOnMainThread
+                }
+
                 val conn = object : ServiceConnection {
                     override fun onServiceConnected(name: ComponentName, binder: IBinder) {
                         service = IRootCommandService.Stub.asInterface(binder)
@@ -121,22 +130,47 @@ object RootShellClient {
 
                     override fun onNullBinding(name: ComponentName) {
                         invalidate()
-                        error.set(RemoteException("Root daemon returned null binding."))
+                        error.set(rootUnavailableException())
                         latch.countDown()
                     }
                 }
                 connection = conn
-                RootService.bind(daemonIntent(), conn)
+
+                val task = RootService.bindOrTask(daemonIntent(), mainExecutor, conn)
+                if (task == null) {
+                    return@runOnMainThread
+                }
+                Shell.EXECUTOR.execute {
+                    try {
+                        val shell = Shell.getShell()
+                        if (!shell.isRoot) {
+                            if (bound.get() == null) {
+                                error.set(rootUnavailableException())
+                                latch.countDown()
+                            }
+                            return@execute
+                        }
+                        shell.execTask(task)
+                    } catch (e: NoShellException) {
+                        if (bound.get() == null) {
+                            error.set(e)
+                            latch.countDown()
+                        }
+                    } catch (e: IOException) {
+                        if (bound.get() == null) {
+                            error.set(e)
+                            latch.countDown()
+                        }
+                    }
+                }
             } catch (e: Exception) {
                 error.set(e)
                 latch.countDown()
             }
         }
-        if (!latch.await(120, TimeUnit.SECONDS)) {
-            throw IllegalStateException("Timed out waiting for root daemon.")
-        }
+        latch.await()
         error.get()?.let { throw it }
-        return bound.get() ?: throw IllegalStateException("Root daemon is not available.")
+        return bound.get() ?: throw rootUnavailableException()
     }
 
     private fun daemonIntent(): Intent =
@@ -168,8 +202,18 @@ object RootShellClient {
                     latch.countDown()
                 }
             }
-            latch.await(30, TimeUnit.SECONDS)
+            latch.await()
             error.get()?.let { throw it }
         }
     }
+
+    private fun rootUnavailableException(): IllegalStateException =
+        IllegalStateException("Root is not available (or Magisk denied this app).")
+
+    private fun rootFailureOutput(error: Throwable): String =
+        when (error) {
+            is NoShellException -> "Root is not available (or Magisk denied this app). ${error.message?.trim().orEmpty()}".trim()
+            is IllegalStateException -> error.message?.trim().orEmpty()
+            else -> (error.message ?: error.toString()).trim()
+        }
 }
